@@ -1,0 +1,18 @@
+# ── Real Tenable export data — NEVER commit ──────────────────────────
+# Live pulls from cloud.tenable.com (vulns, assets, compliance, agents,
+# plugins …) can be tens of GB and contain your environment's data.
+tio_data/
+output/
+*.jsonl
+*.json
+*.csv
+
+# PowerShell build / module output
+bin/
+obj/
+*.log
+
+# macOS / editors
+.DS_Store
+.vscode/
+.idea/
