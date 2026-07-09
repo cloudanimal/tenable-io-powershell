@@ -8,7 +8,10 @@
     PowerShellVersion = '7.3'
     FunctionsToExport = @('Connect-TenableIO', 'Set-TenableIOCredential', 'Get-TenableIOSession',
                           'Get-TenableIOKeySource', 'Export-TenableIOVuln', 'Export-TenableIOAsset',
-                          'Export-TenableIOCompliance')
+                          'Export-TenableIOCompliance', 'Get-TenableIOScan', 'Get-TenableIOScanner',
+                          'Get-TenableIOAgent', 'Get-TenableIOAgentGroup', 'Get-TenableIOTag',
+                          'Get-TenableIOPolicy', 'Get-TenableIONetwork', 'Get-TenableIOExclusion',
+                          'Get-TenableIOUser', 'Get-TenableIOGroup', 'Get-TenableIOServerStatus')
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()

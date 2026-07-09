@@ -52,6 +52,22 @@ Export-TenableIOVuln -State OPEN | Where-Object { $_.severity -eq 'critical' } |
 > Exports can be large. The file writer **aborts if free disk on the target drive drops below 2 GB**,
 > and `-Since` on compliance avoids pulling the (often enormous) full audit history.
 
+## Read config & inventory
+
+Read-only cmdlets for the config/inventory endpoints — they return objects, so pipe them anywhere:
+
+```powershell
+Get-TenableIOScanner | Select-Object name, status, type
+Get-TenableIOScan    | Where-Object status -eq 'running'
+Get-TenableIOUser    | Measure-Object
+
+# agents live under the agent-manager scanner (id 1 by default) — great for coverage/hygiene checks
+Get-TenableIOAgent | Where-Object { [datetimeoffset]::FromUnixTimeSeconds($_.last_connect).UtcDateTime -lt (Get-Date).AddDays(-30) }
+Get-TenableIOAgent -AllScanners       # thorough sweep of every scanner (slower on big tenants)
+```
+
+Also: `Get-TenableIOAgentGroup`, `-Tag`, `-Policy`, `-Network`, `-Exclusion`, `-Group`, `-ServerStatus`.
+
 ## Credentials
 
 Keys resolve in this order (mirrors [tenable-io-python](https://github.com/cloudanimal/tenable-io-python)):
@@ -100,6 +116,8 @@ ever to `cloud.tenable.com` over TLS.
 | `Export-TenableIOVuln` | ✅ | Vulnerability findings (state / severity / since filters). |
 | `Export-TenableIOAsset` | ✅ | Assets (hosts) with attributes, tags, sources. |
 | `Export-TenableIOCompliance` | ✅ | Compliance findings (use `-Since` to bound the history). |
+| `Get-TenableIOScan` / `-Scanner` / `-Policy` / `-Network` / `-Exclusion` / `-User` / `-Group` / `-ServerStatus` | ✅ | Config & inventory reads. |
+| `Get-TenableIOAgent` / `-AgentGroup` / `-Tag` | ✅ | Agents (with last-connect), agent groups, and tags. |
 
 ## License
 

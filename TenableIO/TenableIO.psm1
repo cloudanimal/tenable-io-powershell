@@ -311,5 +311,55 @@ function Export-TenableIOCompliance {
     Write-TIOExport -Kind compliance -Body $body -Path $Path -Label 'compliance'
 }
 
+# ── config / inventory reads ─────────────────────────────────────────────
+function Get-TIOProp { param($Obj, [string]$Name)   # strict-mode-safe property access
+    if ($Obj -and ($Obj.PSObject.Properties.Name -contains $Name)) { $Obj.$Name }
+}
+function Get-TIOPaged {                              # walk offset/limit pagination, emit all items
+    param([string]$Path, [string]$ItemKey, [int]$Limit = 1000, [string]$What)
+    $offset = 0
+    while ($true) {
+        $sep  = if ($Path.Contains('?')) { '&' } else { '?' }
+        $resp = Invoke-TIORequest -Method GET -Path "$Path${sep}limit=$Limit&offset=$offset" -What $What
+        $items = @(Get-TIOProp $resp $ItemKey)
+        $items
+        if ($items.Count -lt $Limit) { break }
+        $offset += $Limit
+    }
+}
+
+function Get-TenableIOScan          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scans'      -What 'scans')      'scans' }
+function Get-TenableIOScanner       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scanners'   -What 'scanners')   'scanners' }
+function Get-TenableIOPolicy        { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/policies'   -What 'policies')   'policies' }
+function Get-TenableIONetwork       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/networks'   -What 'networks')   'networks' }
+function Get-TenableIOExclusion     { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/exclusions' -What 'exclusions') 'exclusions' }
+function Get-TenableIOUser          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/users'      -What 'users')      'users' }
+function Get-TenableIOGroup         { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/groups'     -What 'groups')     'groups' }
+function Get-TenableIOServerStatus  { [CmdletBinding()] param() Invoke-TIORequest GET '/server/status' -What 'server status' }
+function Get-TenableIOTag           { [CmdletBinding()] param([int]$Limit = 1000) Get-TIOPaged -Path '/tags/values' -ItemKey 'values' -Limit $Limit -What 'tag values' }
+
+function Get-TenableIOAgent {
+    <#.SYNOPSIS List linked agents with their last-connect times.
+       .DESCRIPTION Agents live under the agent-manager scanner (id 1 by default). Pass -ScannerId to
+       target one scanner (fast); omit it to sweep every scanner (thorough, but slow on big tenants).#>
+    [CmdletBinding()] param([int]$ScannerId = 1, [switch]$AllScanners, [int]$Limit = 1000)
+    $scanners = if ($AllScanners) { @(Get-TenableIOScanner) } else { @([pscustomobject]@{ id = $ScannerId }) }
+    foreach ($sc in $scanners) {
+        if (-not (Get-TIOProp $sc 'id')) { continue }
+        Get-TIOPaged -Path "/scanners/$($sc.id)/agents" -ItemKey 'agents' -Limit $Limit -What "agents (scanner $($sc.id))"
+    }
+}
+function Get-TenableIOAgentGroup {
+    <#.SYNOPSIS List agent groups across all scanners.#>
+    [CmdletBinding()] param()
+    foreach ($sc in @(Get-TenableIOScanner)) {
+        if (-not (Get-TIOProp $sc 'id')) { continue }
+        Get-TIOProp (Invoke-TIORequest GET "/scanners/$($sc.id)/agent-groups" -What "agent-groups (scanner $($sc.id))") 'groups'
+    }
+}
+
 Export-ModuleMember -Function Connect-TenableIO, Set-TenableIOCredential, Get-TenableIOSession,
-    Get-TenableIOKeySource, Export-TenableIOVuln, Export-TenableIOAsset, Export-TenableIOCompliance
+    Get-TenableIOKeySource, Export-TenableIOVuln, Export-TenableIOAsset, Export-TenableIOCompliance,
+    Get-TenableIOScan, Get-TenableIOScanner, Get-TenableIOAgent, Get-TenableIOAgentGroup, Get-TenableIOTag,
+    Get-TenableIOPolicy, Get-TenableIONetwork, Get-TenableIOExclusion, Get-TenableIOUser, Get-TenableIOGroup,
+    Get-TenableIOServerStatus
