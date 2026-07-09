@@ -6,7 +6,9 @@
     Copyright         = '(c) 2026 Joe Cook. MIT License.'
     Description       = 'PowerShell client for Tenable Vulnerability Management (Tenable.io / cloud.tenable.com). Cross-platform credential handling: SecretManagement, Windows DPAPI, or a fail-closed 0600 file, with env-var and vault-command hooks. Sibling of tenable-io-python.'
     PowerShellVersion = '7.3'
-    FunctionsToExport = @('Connect-TenableIO', 'Set-TenableIOCredential', 'Get-TenableIOSession', 'Get-TenableIOKeySource')
+    FunctionsToExport = @('Connect-TenableIO', 'Set-TenableIOCredential', 'Get-TenableIOSession',
+                          'Get-TenableIOKeySource', 'Export-TenableIOVuln', 'Export-TenableIOAsset',
+                          'Export-TenableIOCompliance')
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()

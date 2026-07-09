@@ -4,7 +4,7 @@ A PowerShell client / exporter for **Tenable Vulnerability Management**
 (Tenable.io · `cloud.tenable.com`) — pull vulnerabilities, assets, compliance
 findings, and the config/inventory endpoints straight from the API.
 
-> **Status: credential layer shipped; export cmdlets in progress.** Sibling of
+> **Status: working — credentials + streamed exports.** Sibling of
 > [`tenable-io-python`](https://github.com/cloudanimal/tenable-io-python).
 
 ## Tenable.io client family
@@ -31,6 +31,26 @@ Get-TenableIOSession       # validate — returns your Tenable account
 ```
 
 Create a key pair in Tenable under **Settings → My Account → API Keys**.
+
+## Export data
+
+Each export runs Tenable's async export flow (start → poll → download chunks) and **streams** results,
+so memory stays flat. With `-Path` it writes JSONL to a file (with a free-disk guard); without `-Path`
+it emits objects to the pipeline.
+
+```powershell
+# stream straight to a JSONL file
+Export-TenableIOVuln -Path ./vulns.jsonl                 # every state (open, reopened, fixed)
+Export-TenableIOVuln -State OPEN -Severity high,critical -Path ./open-crit.jsonl
+Export-TenableIOAsset -Path ./assets.jsonl
+Export-TenableIOCompliance -Since (Get-Date).AddDays(-90) -Path ./compliance.jsonl
+
+# …or work with the objects directly in the pipeline
+Export-TenableIOVuln -State OPEN | Where-Object { $_.severity -eq 'critical' } | Measure-Object
+```
+
+> Exports can be large. The file writer **aborts if free disk on the target drive drops below 2 GB**,
+> and `-Since` on compliance avoids pulling the (often enormous) full audit history.
 
 ## Credentials
 
@@ -77,7 +97,9 @@ ever to `cloud.tenable.com` over TLS.
 | `Connect-TenableIO` | ✅ | Resolve keys for the session. |
 | `Get-TenableIOSession` | ✅ | Validate the connection (the `/session` endpoint). |
 | `Get-TenableIOKeySource` | ✅ | Report which credential store is in use. |
-| `Export-TenableIOVuln` / `-Asset` / `-Compliance` | 🔜 | Streamed exports via the async export APIs. |
+| `Export-TenableIOVuln` | ✅ | Vulnerability findings (state / severity / since filters). |
+| `Export-TenableIOAsset` | ✅ | Assets (hosts) with attributes, tags, sources. |
+| `Export-TenableIOCompliance` | ✅ | Compliance findings (use `-Since` to bound the history). |
 
 ## License
 

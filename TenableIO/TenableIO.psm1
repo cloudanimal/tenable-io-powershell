@@ -15,9 +15,10 @@
 #>
 
 Set-StrictMode -Version Latest
-$script:ServiceName = 'tenable-io'
-$script:BaseUrl     = 'https://cloud.tenable.com'
-$script:Session     = $null   # @{ AccessKey; SecretKey; BaseUrl } after Connect-TenableIO
+$script:ServiceName  = 'tenable-io'
+$script:BaseUrl      = 'https://cloud.tenable.com'
+$script:Session      = $null   # @{ AccessKey; SecretKey; BaseUrl } after Connect-TenableIO
+$script:MinFreeBytes = 2GB     # exports abort if free disk on the target drive drops below this
 
 # ── helpers ──────────────────────────────────────────────────────────────
 function ConvertFrom-TIOSecure {
@@ -196,12 +197,119 @@ function Connect-TenableIO {
     if ($PassThru) { [pscustomobject]$script:Session }
 }
 
+# Shared request with retry on 429 / 5xx (matches the Python client's backoff).
+function Invoke-TIORequest {
+    param([string]$Method, [string]$Path, [hashtable]$Body, [string]$What = 'request', [int]$TimeoutSec = 180)
+    if (-not $script:Session) { Connect-TenableIO | Out-Null }
+    $uri = "$($script:Session.BaseUrl)$Path"
+    $headers = @{ 'X-ApiKeys' = "accessKey=$($script:Session.AccessKey);secretKey=$($script:Session.SecretKey)"; 'Accept' = 'application/json' }
+    $max = 5
+    for ($attempt = 1; $attempt -le $max; $attempt++) {
+        try {
+            $p = @{ Method = $Method; Uri = $uri; Headers = $headers; TimeoutSec = $TimeoutSec }
+            if ($PSBoundParameters.ContainsKey('Body') -and $null -ne $Body) {
+                $p.Body = ($Body | ConvertTo-Json -Depth 10); $p.ContentType = 'application/json'
+            }
+            return Invoke-RestMethod @p
+        } catch {
+            $code = 0; try { $code = [int]$_.Exception.Response.StatusCode } catch {}
+            if (($code -eq 429 -or ($code -ge 500 -and $code -lt 600)) -and $attempt -lt $max) {
+                Start-Sleep -Seconds ([math]::Min(30, [math]::Pow(2, $attempt))); continue
+            }
+            if ($code -eq 401 -or $code -eq 403) { throw "${What}: HTTP $code — check the key and the key user's role." }
+            throw "$What failed$(if ($code) { " (HTTP $code)" }): $($_.Exception.Message)"
+        }
+    }
+}
+
 function Get-TenableIOSession {
     <#.SYNOPSIS Validate the connection — returns your Tenable account (the /session endpoint).#>
     [CmdletBinding()] param()
-    if (-not $script:Session) { Connect-TenableIO | Out-Null }
-    $headers = @{ 'X-ApiKeys' = "accessKey=$($script:Session.AccessKey);secretKey=$($script:Session.SecretKey)"; 'Accept' = 'application/json' }
-    Invoke-RestMethod -Method Get -Uri "$($script:Session.BaseUrl)/session" -Headers $headers
+    Invoke-TIORequest -Method GET -Path '/session' -What 'session'
 }
 
-Export-ModuleMember -Function Connect-TenableIO, Set-TenableIOCredential, Get-TenableIOSession, Get-TenableIOKeySource
+# ── bulk export engine ───────────────────────────────────────────────────
+# Generic Tenable export: POST /{kind}/export → poll status → download chunks as they appear.
+# Emits each record to the pipeline (streaming, so memory stays flat). kind ∈ vulns|assets|compliance.
+function Invoke-TIOExport {
+    param([ValidateSet('vulns', 'assets', 'compliance')][string]$Kind, [hashtable]$Body,
+          [double]$PollSeconds = 2.0, [int]$TimeoutSeconds = 7200)
+    $start = Invoke-TIORequest -Method POST -Path "/$Kind/export" -Body $Body -What "$Kind export start"
+    $uuid  = if ($start.PSObject.Properties.Name -contains 'export_uuid') { $start.export_uuid } else { $start.uuid }
+    if (-not $uuid) { throw "$Kind export did not return an export_uuid." }
+    Write-Verbose "$Kind export $uuid started"
+    $seen = [System.Collections.Generic.HashSet[string]]::new()
+    $waited = 0.0
+    while ($true) {
+        $st = Invoke-TIORequest -Method GET -Path "/$Kind/export/$uuid/status" -What "$Kind export status"
+        foreach ($cid in @($st.chunks_available)) {
+            if (-not $seen.Add([string]$cid)) { continue }
+            $chunk = Invoke-TIORequest -Method GET -Path "/$Kind/export/$uuid/chunks/$cid" -What "$Kind export chunk $cid"
+            foreach ($rec in @($chunk)) { $rec }
+        }
+        $status = ("" + $st.status).ToUpper()
+        if ($status -eq 'FINISHED') { break }
+        if ('ERROR', 'CANCELLED' -contains $status) { throw "$Kind export ended with status $status" }
+        Start-Sleep -Seconds $PollSeconds
+        $waited += $PollSeconds
+        if ($waited -gt $TimeoutSeconds) { throw "$Kind export timed out after ${TimeoutSeconds}s (uuid $uuid)" }
+    }
+}
+
+# Emit to the pipeline, or stream to a JSONL file with a free-disk safety net.
+function Write-TIOExport {
+    param([string]$Kind, [hashtable]$Body, [string]$Path, [string]$Label)
+    if (-not $Path) { Invoke-TIOExport -Kind $Kind -Body $Body; return }
+    $full  = [System.IO.Path]::GetFullPath($Path)
+    $drive = [System.IO.DriveInfo]::new([System.IO.Path]::GetPathRoot($full))
+    $writer = [System.IO.StreamWriter]::new($full, $false)
+    $n = 0
+    try {
+        Invoke-TIOExport -Kind $Kind -Body $Body | ForEach-Object {
+            if (($n % 1000) -eq 0 -and $drive.AvailableFreeSpace -lt $script:MinFreeBytes) {
+                throw "Aborting $Label export: free disk on '$($drive.Name)' is below $([math]::Round($script:MinFreeBytes/1GB,1)) GB (wrote $n records to $full)."
+            }
+            $writer.WriteLine(($_ | ConvertTo-Json -Compress -Depth 50))
+            $n++
+            if (($n % 5000) -eq 0) { Write-Host "  ${Label}: $n ..." }
+        }
+    } finally { $writer.Dispose() }
+    Write-Host "[ok] $Label → $n records at $full" -ForegroundColor Green
+}
+
+function Export-TenableIOVuln {
+    <#.SYNOPSIS Export vulnerability findings via the async export API.
+       .DESCRIPTION Defaults to every state (OPEN, REOPENED, FIXED) for full history — drop FIXED for
+       just current. With -Path, streams JSONL to a file (with a free-disk guard); else emits objects.#>
+    [CmdletBinding()] param(
+        [ValidateSet('OPEN', 'REOPENED', 'FIXED')][string[]]$State = @('OPEN', 'REOPENED', 'FIXED'),
+        [ValidateSet('info', 'low', 'medium', 'high', 'critical')][string[]]$Severity,
+        [datetime]$Since,
+        [int]$NumAssets = 500,
+        [string]$Path
+    )
+    $filters = @{}
+    if ($State)    { $filters.state = $State }
+    if ($Severity) { $filters.severity = $Severity }
+    if ($Since)    { $filters.since = [int64](New-TimeSpan -Start ([datetime]'1970-01-01Z') -End $Since.ToUniversalTime()).TotalSeconds }
+    $body = @{ num_assets = $NumAssets; include_unlicensed = $true }
+    if ($filters.Count) { $body.filters = $filters }
+    Write-TIOExport -Kind vulns -Body $body -Path $Path -Label 'vulns'
+}
+
+function Export-TenableIOAsset {
+    <#.SYNOPSIS Export assets (hosts) with their attributes, tags, sources, and last-seen data.#>
+    [CmdletBinding()] param([int]$ChunkSize = 1000, [string]$Path)
+    Write-TIOExport -Kind assets -Body @{ chunk_size = $ChunkSize } -Path $Path -Label 'assets'
+}
+
+function Export-TenableIOCompliance {
+    <#.SYNOPSIS Export compliance/audit findings. Use -Since to avoid the (often huge) full history.#>
+    [CmdletBinding()] param([datetime]$Since, [int]$NumFindings = 5000, [string]$Path)
+    $body = @{ num_findings = $NumFindings }
+    if ($Since) { $body.filters = @{ last_seen = [int64](New-TimeSpan -Start ([datetime]'1970-01-01Z') -End $Since.ToUniversalTime()).TotalSeconds } }
+    Write-TIOExport -Kind compliance -Body $body -Path $Path -Label 'compliance'
+}
+
+Export-ModuleMember -Function Connect-TenableIO, Set-TenableIOCredential, Get-TenableIOSession,
+    Get-TenableIOKeySource, Export-TenableIOVuln, Export-TenableIOAsset, Export-TenableIOCompliance
