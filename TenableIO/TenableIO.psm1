@@ -106,6 +106,8 @@ function Get-TIOFileStore {
 }
 
 function Set-TIOFileStore {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '',
+        Justification = 'DPAPI-encrypts the already-plaintext API key for at-rest storage on Windows; the value is plaintext at the API boundary regardless.')]
     param([string]$Account, [string]$Value)
     $dir = Get-TIODataDir
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
@@ -161,8 +163,11 @@ function Resolve-TIOKey {
 
 # -- public API ------------------------------------------------------------
 function Get-TenableIOKeySource {
-    <#.SYNOPSIS Report which credential store this host would use (no secrets shown).#>
-    [CmdletBinding()] param()
+    <#
+.SYNOPSIS
+Report which credential store this host would use (no secrets shown).
+#>
+    [CmdletBinding()] [OutputType([string])] param()
     $vault = Get-TIOVaultName
     if     ($vault)              { "SecretManagement vault '$vault'" }
     elseif ($script:OnWindows)   { "Windows DPAPI file ($(Get-TIOKeyFile))" }
@@ -170,8 +175,12 @@ function Get-TenableIOKeySource {
 }
 
 function Set-TenableIOCredential {
-    <#.SYNOPSIS Prompt for the Tenable API access + secret keys and save them to the OS secret store.
-       .DESCRIPTION Hidden prompts (entered twice); validates with a session lookup afterwards.#>
+    <#
+.SYNOPSIS
+Prompt for the Tenable API access + secret keys and save them to the OS secret store.
+.DESCRIPTION
+Hidden prompts (entered twice); validates with a session lookup afterwards.
+#>
     [CmdletBinding()] param([switch]$SkipValidate)
     Write-Host "Storing Tenable API keys in $(Get-TenableIOKeySource) (service '$script:ServiceName')." -ForegroundColor Cyan
     foreach ($pair in @(@('access','ACCESS'), @('secret','SECRET'))) {
@@ -192,9 +201,14 @@ function Set-TenableIOCredential {
 }
 
 function Connect-TenableIO {
-    <#.SYNOPSIS Resolve the API keys and stash them for subsequent cmdlets.
-       .PARAMETER AccessKey Optional explicit access key (overrides env / store).
-       .PARAMETER SecretKey Optional explicit secret key.#>
+    <#
+.SYNOPSIS
+Resolve the API keys and stash them for subsequent cmdlets.
+.PARAMETER AccessKey
+Optional explicit access key (overrides env / store).
+.PARAMETER SecretKey
+Optional explicit secret key.
+#>
     [CmdletBinding()] param(
         [string]$AccessKey,
         [string]$SecretKey,
@@ -241,7 +255,10 @@ function Invoke-TIORequest {
 }
 
 function Get-TenableIOSession {
-    <#.SYNOPSIS Validate the connection - returns your Tenable account (the /session endpoint).#>
+    <#
+.SYNOPSIS
+Validate the connection - returns your Tenable account (the /session endpoint).
+#>
     [CmdletBinding()] param()
     Invoke-TIORequest -Method GET -Path '/session' -What 'session'
 }
@@ -297,9 +314,13 @@ function Write-TIOExport {
 }
 
 function Export-TenableIOVuln {
-    <#.SYNOPSIS Export vulnerability findings via the async export API.
-       .DESCRIPTION Defaults to every state (OPEN, REOPENED, FIXED) for full history - drop FIXED for
-       just current. With -Path, streams JSONL to a file (with a free-disk guard); else emits objects.#>
+    <#
+.SYNOPSIS
+Export vulnerability findings via the async export API.
+.DESCRIPTION
+Defaults to every state (OPEN, REOPENED, FIXED) for full history - drop FIXED for
+just current. With -Path, streams JSONL to a file (with a free-disk guard); else emits objects.
+#>
     [CmdletBinding()] param(
         [ValidateSet('OPEN', 'REOPENED', 'FIXED')][string[]]$State = @('OPEN', 'REOPENED', 'FIXED'),
         [ValidateSet('info', 'low', 'medium', 'high', 'critical')][string[]]$Severity,
@@ -317,13 +338,19 @@ function Export-TenableIOVuln {
 }
 
 function Export-TenableIOAsset {
-    <#.SYNOPSIS Export assets (hosts) with their attributes, tags, sources, and last-seen data.#>
+    <#
+.SYNOPSIS
+Export assets (hosts) with their attributes, tags, sources, and last-seen data.
+#>
     [CmdletBinding()] param([int]$ChunkSize = 1000, [string]$Path)
     Write-TIOExport -Kind assets -Body @{ chunk_size = $ChunkSize } -Path $Path -Label 'assets'
 }
 
 function Export-TenableIOCompliance {
-    <#.SYNOPSIS Export compliance/audit findings. Use -Since to avoid the (often huge) full history.#>
+    <#
+.SYNOPSIS
+Export compliance/audit findings. Use -Since to avoid the (often huge) full history.
+#>
     [CmdletBinding()] param([datetime]$Since, [int]$NumFindings = 5000, [string]$Path)
     $body = @{ num_findings = $NumFindings }
     if ($Since) { $body.filters = @{ last_seen = [int64](New-TimeSpan -Start ([datetime]'1970-01-01Z') -End $Since.ToUniversalTime()).TotalSeconds } }
@@ -347,20 +374,60 @@ function Get-TIOPaged {                              # walk offset/limit paginat
     }
 }
 
+<#
+.SYNOPSIS
+List scan configurations.
+#>
 function Get-TenableIOScan          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scans'      -What 'scans')      'scans' }
+<#
+.SYNOPSIS
+List scanners (sensors).
+#>
 function Get-TenableIOScanner       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scanners'   -What 'scanners')   'scanners' }
+<#
+.SYNOPSIS
+List scan policies.
+#>
 function Get-TenableIOPolicy        { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/policies'   -What 'policies')   'policies' }
+<#
+.SYNOPSIS
+List networks.
+#>
 function Get-TenableIONetwork       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/networks'   -What 'networks')   'networks' }
+<#
+.SYNOPSIS
+List scan exclusions.
+#>
 function Get-TenableIOExclusion     { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/exclusions' -What 'exclusions') 'exclusions' }
+<#
+.SYNOPSIS
+List users.
+#>
 function Get-TenableIOUser          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/users'      -What 'users')      'users' }
+<#
+.SYNOPSIS
+List user groups.
+#>
 function Get-TenableIOGroup         { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/groups'     -What 'groups')     'groups' }
+<#
+.SYNOPSIS
+Get the Tenable.io server status.
+#>
 function Get-TenableIOServerStatus  { [CmdletBinding()] param() Invoke-TIORequest GET '/server/status' -What 'server status' }
+<#
+.SYNOPSIS
+List tag values (paged).
+#>
 function Get-TenableIOTag           { [CmdletBinding()] param([int]$Limit = 1000) Get-TIOPaged -Path '/tags/values' -ItemKey 'values' -Limit $Limit -What 'tag values' }
 
 function Get-TenableIOAgent {
-    <#.SYNOPSIS List linked agents with their last-connect times.
-       .DESCRIPTION Agents live under the agent-manager scanner (id 1 by default). Pass -ScannerId to
-       target one scanner (fast); use -AllScanners to sweep every scanner (thorough, slow on big tenants).#>
+    <#
+.SYNOPSIS
+List linked agents with their last-connect times.
+.DESCRIPTION
+Agents live under the agent-manager scanner (id 1 by default). Pass -ScannerId to
+target one scanner (fast); use -AllScanners to sweep every scanner (thorough, slow on big tenants).
+#>
     [CmdletBinding()] param([int]$ScannerId = 1, [switch]$AllScanners, [int]$Limit = 1000)
     $scanners = if ($AllScanners) { @(Get-TenableIOScanner) } else { @([pscustomobject]@{ id = $ScannerId }) }
     foreach ($sc in $scanners) {
@@ -369,7 +436,10 @@ function Get-TenableIOAgent {
     }
 }
 function Get-TenableIOAgentGroup {
-    <#.SYNOPSIS List agent groups across all scanners.#>
+    <#
+.SYNOPSIS
+List agent groups across all scanners.
+#>
     [CmdletBinding()] param()
     foreach ($sc in @(Get-TenableIOScanner)) {
         if (-not (Get-TIOProp $sc 'id')) { continue }
