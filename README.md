@@ -19,8 +19,11 @@ Same exporter, in the language you reach for:
 ## Install
 
 ```powershell
-Import-Module ./TenableIO/TenableIO.psd1     # PowerShell 7.3+
+Import-Module ./TenableIO/TenableIO.psd1     # Windows PowerShell 5.1+ or PowerShell 7+
 ```
+
+Runs on **Windows PowerShell 5.1** (the version built into Windows — nothing to install) and on
+**PowerShell 7+** cross-platform. On 5.1 it forces TLS 1.2 for you and stores keys with Windows DPAPI.
 
 ## Get started
 
