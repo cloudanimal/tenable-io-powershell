@@ -27,13 +27,44 @@ Runs on **Windows PowerShell 5.1** (the version built into Windows — nothing t
 
 ## Get started
 
+Import the module and set your credentials:
+
 ```powershell
-Set-TIOCredential    # hidden prompts for your access + secret key, saves to the OS store
-Connect-TIO          # resolves the keys for this session
-Get-TIOSession       # validate — returns your Tenable account
+Import-Module ./TenableIO/TenableIO.psd1
+
+# Securely enter your API keys (hidden prompt, stored encrypted)
+$accessKey = Read-Host "Enter Tenable Access Key" -AsSecureString
+$secretKey = Read-Host "Enter Tenable Secret Key" -AsSecureString
+Set-TIOCredential -TenableAccessKey $accessKey -TenableSecretKey $secretKey
+
+# Validate the connection
+Get-TIOSession
 ```
 
 Create a key pair in Tenable under **Settings → My Account → API Keys**.
+
+### Set defaults and export
+
+Configure default filters for your typical export workflow:
+
+```powershell
+# Set defaults once (last 14 days, exclude accepted-risk, severities low/medium/high/critical, active/resurfaced states)
+Set-TIOExportDefaults `
+    -Since "14 days" `
+    -SeverityModification NONE,RECASTED `
+    -Severity low,medium,high,critical `
+    -State OPEN,REOPENED
+
+# Now export with those defaults applied
+Export-TIOFindings -Path ./findings.jsonl
+
+# Filter results (e.g., only where exploit is available)
+Export-TIOFindings | 
+  Where-Object { $_.plugin.exploit_ease -eq 'Exploit Available' } | 
+  Export-Csv -Path ./exploitable.csv
+```
+
+Defaults persist only for the current session. Add the `Set-TIOExportDefaults` call to your PowerShell profile to make them permanent.
 
 ## Export data
 
