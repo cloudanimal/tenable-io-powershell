@@ -43,31 +43,73 @@ it emits objects to the pipeline.
 
 ```powershell
 # stream straight to a JSONL file
-Export-TIOVuln -Path ./current-vulns.jsonl         # default: CURRENT findings (OPEN + REOPENED)
-Export-TIOVuln -All -Path ./all-vulns.jsonl        # ALL findings incl. FIXED history (large - opt-in)
-Export-TIOVuln -State OPEN -Severity high,critical -Path ./open-crit.jsonl
+Export-TIOFindings -Path ./current-findings.jsonl         # default: CURRENT findings (OPEN + REOPENED)
+Export-TIOFindings -All -Path ./all-findings.jsonl        # ALL findings incl. FIXED history (large - opt-in)
+Export-TIOFindings -State OPEN -Severity high,critical -Path ./open-crit.jsonl
 Export-TIOAsset -Path ./assets.jsonl
-Export-TIOCompliance -Since (Get-Date).AddDays(-90) -Path ./compliance.jsonl
+Export-TIOCompliance -Since "90 days" -Path ./compliance.jsonl
 
 # …or work with the objects directly in the pipeline
-Export-TIOVuln -State OPEN | Where-Object { $_.severity -eq 'critical' } | Measure-Object
+Export-TIOFindings -State OPEN | Where-Object { $_.severity -eq 'critical' } | Measure-Object
 ```
+
+### Smart date ranges with `-Since`
+
+The `-Since` parameter accepts **both absolute datetimes and relative date strings**:
+
+```powershell
+# Relative date strings (simpler for common cases)
+Export-TIOFindings -Since "14 days"      # last 2 weeks
+Export-TIOFindings -Since "7d"           # last 7 days (short form)
+Export-TIOFindings -Since "2 weeks"
+Export-TIOFindings -Since "1 year"
+
+# Absolute datetime (unchanged)
+Export-TIOFindings -Since (Get-Date).AddDays(-30)
+Export-TIOFindings -Since "2026-01-01"
+```
+
+**Supported relative date formats:**
+- Days: `"7 days"`, `"7d"`
+- Weeks: `"2 weeks"`, `"2w"`
+- Years: `"1 year"`, `"1y"`
+- Hours: `"12 hours"`, `"12h"`
+- Minutes: `"30 minutes"`, `"30m"`
+
+### Set defaults for your session
+
+Use `Set-TIOExportDefaults` to apply parameter defaults to all `Export-TIOFindings` calls in your session:
+
+```powershell
+# Set defaults once
+Set-TIOExportDefaults `
+    -Severity high,critical `
+    -State OPEN,REOPENED `
+    -Since "14 days" `
+    -Path "C:\TIO_Exports"
+
+# Now all exports use these defaults
+Export-TIOFindings                   # uses all defaults
+Export-TIOFindings -Severity info    # overrides severity, keeps others
+```
+
+Defaults persist only for the current session. To make them permanent, add the call to your PowerShell profile.
 
 ### Targeted pulls (filters applied server-side)
 
-`Export-TIOVuln` filters are sent to Tenable, so **only the matching slice is transferred** — no
+`Export-TIOFindings` filters are sent to Tenable, so **only the matching slice is transferred** — no
 downloading everything and grepping locally:
 
 ```powershell
 # critical, high-VPR findings on one business unit → the "fix these now" list
-Export-TIOVuln -Severity critical -VprMin 9 -Tag @{ BU = 'AMI' } -Path ./crown-jewels-crit.jsonl
+Export-TIOFindings -Severity critical -VprMin 9 -Tag @{ BU = 'AMI' } -Path ./crown-jewels-crit.jsonl
 
 # everything a specific plugin or plugin family reports, within a CIDR
-Export-TIOVuln -PluginId 51192,57582 -Cidr 10.20.0.0/16 -Path ./cert-issues.jsonl
-Export-TIOVuln -PluginFamily 'Windows' -Severity high,critical
+Export-TIOFindings -PluginId 51192,57582 -Cidr 10.20.0.0/16 -Path ./cert-issues.jsonl
+Export-TIOFindings -PluginFamily 'Windows' -Severity high,critical
 
 # scope to a network and a VPR band
-Export-TIOVuln -NetworkId 00000000-0000-0000-0000-000000000000 -VprMin 7 -VprMax 8.9
+Export-TIOFindings -NetworkId 00000000-0000-0000-0000-000000000000 -VprMin 7 -VprMax 8.9
 ```
 
 | Filter | Parameter |
@@ -80,22 +122,22 @@ Export-TIOVuln -NetworkId 00000000-0000-0000-0000-000000000000 -VprMin 7 -VprMax
 | Severity origin | `-SeverityModification NONE,ACCEPTED,RECASTED` — audit accepted-risk / recast findings |
 | Network | `-NetworkId <uuid>` · `-Cidr 10.0.0.0/8` |
 | Tags | `-Tag @{ BU = 'AMI'; Environment = 'Production','Staging' }` |
-| Time | `-Since` · `-FirstFound` · `-LastFound` · `-LastFixed` · `-IndexedSince` (each a `[datetime]`) |
+| Time | `-Since` (smart datetime/string) · `-FirstFound` · `-LastFound` · `-LastFixed` · `-IndexedSince` |
 
 ```powershell
 # remediation verification — what was fixed in the last month
-Export-TIOVuln -State FIXED -LastFixed (Get-Date).AddDays(-30) -Path ./fixed-this-month.jsonl
+Export-TIOFindings -State FIXED -LastFixed "30 days" -Path ./fixed-this-month.jsonl
 
 # governance — everything currently accepted-risk or recast
-Export-TIOVuln -SeverityModification ACCEPTED,RECASTED -All
+Export-TIOFindings -SeverityModification ACCEPTED,RECASTED -All
 
-# coverage — only agent-collected high/critical findings
-Export-TIOVuln -Source AGENT -Severity high,critical
+# coverage — only agent-collected high/critical findings from last 7 days
+Export-TIOFindings -Source AGENT -Severity high,critical -Since "7d"
 ```
 
 > **CVSS note:** Tenable's vuln export accepts a VPR range but rejects `cvss_base_score`
 > (`BAD_REQUEST_UNKNOWN_PROPERTY`). To slice by CVSS, filter client-side after the pull:
-> `Export-TIOVuln -Severity critical | Where-Object { $_.plugin.cvss3_base_score -ge 9 }`.
+> `Export-TIOFindings -Severity critical | Where-Object { $_.plugin.cvss3_base_score -ge 9 }`.
 
 > Exports can be large. The file writer **aborts if free disk on the target drive drops below 2 GB**,
 > and `-Since` on compliance avoids pulling the (often enormous) full audit history.
@@ -161,7 +203,9 @@ ever to `cloud.tenable.com` over TLS.
 | `Connect-TIO` | ✅ | Resolve keys for the session. |
 | `Get-TIOSession` | ✅ | Validate the connection (the `/session` endpoint). |
 | `Get-TIOKeySource` | ✅ | Report which credential store is in use. |
-| `Export-TIOVuln` | ✅ | Vulnerability findings (state / severity / since filters). |
+| `Export-TIOFindings` | ✅ | Vulnerability findings (state / severity / since filters). Alias: `Export-TIOVuln`. |
+| `Set-TIOExportDefaults` | ✅ | Set session-level defaults for `Export-TIOFindings` parameters. |
+| `ConvertTo-TIORelativeDate` | ✅ | Parse relative date strings (e.g., "7 days", "7d") into datetime objects. |
 | `Export-TIOAsset` | ✅ | Assets (hosts) with attributes, tags, sources. |
 | `Export-TIOCompliance` | ✅ | Compliance findings (use `-Since` to bound the history). |
 | `Get-TIOScan` / `-Scanner` / `-Policy` / `-Network` / `-Exclusion` / `-User` / `-Group` / `-ServerStatus` | ✅ | Config & inventory reads. |
