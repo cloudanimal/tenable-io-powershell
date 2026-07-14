@@ -1,7 +1,7 @@
 # tenable-io-powershell — API coverage roadmap
 
 A map of the **Tenable Vulnerability Management (Tenable.io) API** translated into a PowerShell
-module. Organized by API domain, using approved PowerShell verbs and a consistent `-TenableIO` noun
+module. Organized by API domain, using approved PowerShell verbs and a consistent `-Tio` noun
 prefix.
 
 **Status:** ✅ shipped · ⬜ planned · 🔜 next tranche (highest value)
@@ -9,97 +9,97 @@ prefix.
 ## Conventions
 - `Get-*` = read-only. `New` / `Set` / `Remove` / `Start` / `Stop` / `Import` / `Export` / `Add` /
   `Move` … = state-changing, and every destructive one takes `-WhatIf` / `-Confirm`.
-- Pipeline-friendly: `Get-TenableIOScan | Start-TenableIOScan`.
-- `Invoke-TenableIORequest` is the generic escape hatch, so any endpoint not yet wrapped is still reachable.
+- Pipeline-friendly: `Get-TioScan | Start-TioScan`.
+- `Invoke-TioRequest` is the generic escape hatch, so any endpoint not yet wrapped is still reachable.
 
 ---
 
 ## 1. Connection & platform
-- ✅ `Connect-TenableIO` · `Set-TenableIOCredential` · `Get-TenableIOKeySource` · `Get-TenableIOSession` (whoami) · `Get-TenableIOServerStatus`
-- ⬜ `Disconnect-TenableIO` · `Test-TenableIOConnection` · `Get-TenableIOServerProperties` · `Invoke-TenableIORequest`
+- ✅ `Connect-Tio` · `Set-TioCredential` · `Get-TioKeySource` · `Get-TioSession` (whoami) · `Get-TioServerStatus`
+- ⬜ `Disconnect-Tio` · `Test-TioConnection` · `Get-TioServerProperties` · `Invoke-TioRequest`
 
 ## 2. Bulk exports (async: start -> poll -> chunks)
-- ✅ `Export-TenableIOVuln` · `Export-TenableIOAsset` · `Export-TenableIOCompliance`
-- ⬜ `Get-TenableIOExportStatus` · `Stop-TenableIOExport` (cancel)
+- ✅ `Export-TioVuln` · `Export-TioAsset` · `Export-TioCompliance`
+- ⬜ `Get-TioExportStatus` · `Stop-TioExport` (cancel)
 
 ## 3. Workbenches (fast interactive queries, no full export) 🔜
-- ⬜ `Get-TenableIOVulnerability` (by filter) · `Get-TenableIOVulnerabilityInfo` (plugin detail) · `Get-TenableIOVulnerabilityOutput`
-- ⬜ `Get-TenableIOWorkbenchAsset` · `Get-TenableIOAssetInfo` · `Get-TenableIOAssetVulnerability`
-- ⬜ `Get-TenableIOFilter` (available vuln/asset/scan filters)
+- ⬜ `Get-TioVulnerability` (by filter) · `Get-TioVulnerabilityInfo` (plugin detail) · `Get-TioVulnerabilityOutput`
+- ⬜ `Get-TioWorkbenchAsset` · `Get-TioAssetInfo` · `Get-TioAssetVulnerability`
+- ⬜ `Get-TioFilter` (available vuln/asset/scan filters)
 
 ## 4. Assets
-- ⬜ `Get-TenableIOAsset` (list/detail) · `Remove-TenableIOAsset` (single + bulk)
-- ⬜ `Import-TenableIOAsset` · `Move-TenableIOAsset` (between networks) · `Get-TenableIOAssetActivity`
+- ⬜ `Get-TioAsset` (list/detail) · `Remove-TioAsset` (single + bulk)
+- ⬜ `Import-TioAsset` · `Move-TioAsset` (between networks) · `Get-TioAssetActivity`
 
 ## 5. Scans 🔜
-- ✅ `Get-TenableIOScan`
-- ⬜ `New-TenableIOScan` · `Set-TenableIOScan` · `Remove-TenableIOScan` · `Copy-TenableIOScan`
-- ⬜ `Start-TenableIOScan` (launch) · `Stop-TenableIOScan` · `Suspend-TenableIOScan` (pause) · `Resume-TenableIOScan`
-- ⬜ `Get-TenableIOScanHistory` · `Get-TenableIOScanStatus`
-- ⬜ `Export-TenableIOScanResult` (download .nessus / CSV / PDF) · `Import-TenableIONessusFile` (upload results)
-- ⬜ `Set-TenableIOScanSchedule`
+- ✅ `Get-TioScan`
+- ⬜ `New-TioScan` · `Set-TioScan` · `Remove-TioScan` · `Copy-TioScan`
+- ⬜ `Start-TioScan` (launch) · `Stop-TioScan` · `Suspend-TioScan` (pause) · `Resume-TioScan`
+- ⬜ `Get-TioScanHistory` · `Get-TioScanStatus`
+- ⬜ `Export-TioScanResult` (download .nessus / CSV / PDF) · `Import-TioNessusFile` (upload results)
+- ⬜ `Set-TioScanSchedule`
 
 ## 6. Scan policies & templates
-- ✅ `Get-TenableIOPolicy`
-- ⬜ `New-TenableIOPolicy` · `Set-TenableIOPolicy` · `Remove-TenableIOPolicy` · `Copy-TenableIOPolicy`
-- ⬜ `Import-TenableIOPolicy` · `Export-TenableIOPolicy`
-- ⬜ `Get-TenableIOScanTemplate` · `Get-TenableIOPolicyTemplate`
+- ✅ `Get-TioPolicy`
+- ⬜ `New-TioPolicy` · `Set-TioPolicy` · `Remove-TioPolicy` · `Copy-TioPolicy`
+- ⬜ `Import-TioPolicy` · `Export-TioPolicy`
+- ⬜ `Get-TioScanTemplate` · `Get-TioPolicyTemplate`
 
 ## 7. Scanners & scanner groups
-- ✅ `Get-TenableIOScanner`
-- ⬜ `Get-TenableIOScannerGroup` · `New/Set/Remove-TenableIOScannerGroup` · `Add/Remove-TenableIOScannerToGroup`
-- ⬜ `Get-TenableIOScannerKey`
+- ✅ `Get-TioScanner`
+- ⬜ `Get-TioScannerGroup` · `New/Set/Remove-TioScannerGroup` · `Add/Remove-TioScannerToGroup`
+- ⬜ `Get-TioScannerKey`
 
 ## 8. Agents & agent groups (coverage / hygiene) 🔜
-- ✅ `Get-TenableIOAgent` · `Get-TenableIOAgentGroup`
-- ⬜ `Remove-TenableIOAgent` (unlink stale)
-- ⬜ `New/Set/Remove-TenableIOAgentGroup` · `Add/Remove-TenableIOAgentToGroup`
-- ⬜ `Get/Set-TenableIOAgentConfig` · `Get/New/Remove-TenableIOAgentExclusion` (blackout windows)
+- ✅ `Get-TioAgent` · `Get-TioAgentGroup`
+- ⬜ `Remove-TioAgent` (unlink stale)
+- ⬜ `New/Set/Remove-TioAgentGroup` · `Add/Remove-TioAgentToGroup`
+- ⬜ `Get/Set-TioAgentConfig` · `Get/New/Remove-TioAgentExclusion` (blackout windows)
 
 ## 9. Tags 🔜
-- ✅ `Get-TenableIOTag` (values)
-- ⬜ `Get-TenableIOTagCategory` · `New/Set/Remove-TenableIOTag` · `New/Remove-TenableIOTagCategory`
-- ⬜ `Add-TenableIOAssetTag` / `Remove-TenableIOAssetTag` (bulk assignment) · `Get-TenableIOTagAssignment`
+- ✅ `Get-TioTag` (values)
+- ⬜ `Get-TioTagCategory` · `New/Set/Remove-TioTag` · `New/Remove-TioTagCategory`
+- ⬜ `Add-TioAssetTag` / `Remove-TioAssetTag` (bulk assignment) · `Get-TioTagAssignment`
 
 ## 10. Networks, target groups, access groups
-- ✅ `Get-TenableIONetwork`
-- ⬜ `New/Set/Remove-TenableIONetwork` · `Get-TenableIONetworkAssetCount`
-- ⬜ `Get/New/Set/Remove-TenableIOTargetGroup`
-- ⬜ `Get/New/Set/Remove-TenableIOAccessGroup`
+- ✅ `Get-TioNetwork`
+- ⬜ `New/Set/Remove-TioNetwork` · `Get-TioNetworkAssetCount`
+- ⬜ `Get/New/Set/Remove-TioTargetGroup`
+- ⬜ `Get/New/Set/Remove-TioAccessGroup`
 
 ## 11. Exclusions (scan windows)
-- ✅ `Get-TenableIOExclusion`
-- ⬜ `New/Set/Remove-TenableIOExclusion` · `Import-TenableIOExclusion`
+- ✅ `Get-TioExclusion`
+- ⬜ `New/Set/Remove-TioExclusion` · `Import-TioExclusion`
 
 ## 12. Managed credentials (for scans)
-- ⬜ `Get/New/Set/Remove-TenableIOManagedCredential` · `Get-TenableIOCredentialType` · `Get-TenableIOCredentialPermission`
+- ⬜ `Get/New/Set/Remove-TioManagedCredential` · `Get-TioCredentialType` · `Get-TioCredentialPermission`
 
 ## 13. Plugins
-- ⬜ `Find-TenableIOPlugin` (paged catalog) · `Get-TenableIOPlugin` (by ID)
-- ⬜ `Get-TenableIOPluginFamily` · `Get-TenableIOPluginFamilyDetail`
+- ⬜ `Find-TioPlugin` (paged catalog) · `Get-TioPlugin` (by ID)
+- ⬜ `Get-TioPluginFamily` · `Get-TioPluginFamilyDetail`
 
 ## 14. Users, groups, roles, permissions *(admin key)*
-- ✅ `Get-TenableIOUser` · `Get-TenableIOGroup`
-- ⬜ `New/Set/Remove-TenableIOUser` · `Enable/Disable-TenableIOUser` · `Set-TenableIOUserRole` · `Set-TenableIOUserPassword` · `Set-TenableIOUserAuthorization` (API/UI/SSO)
-- ⬜ `New/Set/Remove-TenableIOGroup` · `Add/Remove-TenableIOUserToGroup` · `Get-TenableIOPermission`
+- ✅ `Get-TioUser` · `Get-TioGroup`
+- ⬜ `New/Set/Remove-TioUser` · `Enable/Disable-TioUser` · `Set-TioUserRole` · `Set-TioUserPassword` · `Set-TioUserAuthorization` (API/UI/SSO)
+- ⬜ `New/Set/Remove-TioGroup` · `Add/Remove-TioUserToGroup` · `Get-TioPermission`
 
 ## 15. Folders
-- ⬜ `Get/New/Set/Remove-TenableIOFolder`
+- ⬜ `Get/New/Set/Remove-TioFolder`
 
 ## 16. Risk workflow — recast / accept-risk / VPR *(admin)*
-- ⬜ `Get/New/Set/Remove-TenableIORecastRule` · `Get/New/Set/Remove-TenableIOAcceptRiskRule`
+- ⬜ `Get/New/Set/Remove-TioRecastRule` · `Get/New/Set/Remove-TioAcceptRiskRule`
 
 ## 17. Files
-- ⬜ `Send-TenableIOFile` (upload, for policy/scan import)
+- ⬜ `Send-TioFile` (upload, for policy/scan import)
 
 ## 18. Audit log *(admin)*
-- ⬜ `Get-TenableIOAuditLog`
+- ⬜ `Get-TioAuditLog`
 
 ---
 
 ## Optional / larger sub-domains (phase later, possibly separate sub-modules)
-- **19. Lumin / Exposure (if licensed):** `Get-TenableIOExposureScore` · `Get-TenableIOAssetExposure` · `Get/Set-TenableIOAcr` (asset criticality) · `Get-TenableIORemediation`
-- **20. Web App Scanning (WAS v2):** its own noun space — `Get/New/Start/Stop-TenableIOWasScan` · `Get-TenableIOWasScanResult` · `Get-TenableIOWasVulnerability` · `Get/Set-TenableIOWasConfig`
+- **19. Lumin / Exposure (if licensed):** `Get-TioExposureScore` · `Get-TioAssetExposure` · `Get/Set-TioAcr` (asset criticality) · `Get-TioRemediation`
+- **20. Web App Scanning (WAS v2):** its own noun space — `Get/New/Start/Stop-TioWasScan` · `Get-TioWasScanResult` · `Get-TioWasVulnerability` · `Get/Set-TioWasConfig`
 - **21. Container / Cloud security:** likely a separate module entirely — flag, don't fold in.
 
 ---
