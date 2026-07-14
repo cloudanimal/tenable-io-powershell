@@ -565,8 +565,9 @@ Restrict by asset tag(s). A hashtable of category -> value(s):
 -Tag @{ BU = 'AMI'; Environment = 'Production','Staging' }
 .PARAMETER Source
 Restrict to findings from a given collection source: NESSUS (network scan), AGENT, or NNM (passive).
-.PARAMETER SeverityModification
-Restrict by how severity was set: NONE (unmodified), ACCEPTED (accept-risk), or RECASTED.
+.PARAMETER RiskAccepted
+Restrict by risk acceptance/modification status: NONE (unmodified), ACCEPTED (accept-risk), or RECASTED (severity override).
+Maps to API field: severity_modification_type
 .PARAMETER PluginType
 Restrict to a plugin type: remote, local, combined, summary, reputation, or third_party.
 .PARAMETER Since
@@ -606,7 +607,8 @@ Export-TIOFindings -Source AGENT -Severity high,critical -Since "7 days" -Path .
         [ValidateSet('remote', 'local', 'combined', 'summary', 'reputation', 'third_party')]
         [string]$PluginType,
         [ValidateSet('NESSUS', 'AGENT', 'NNM')][string[]]$Source,
-        [ValidateSet('NONE', 'ACCEPTED', 'RECASTED')][string[]]$SeverityModification,
+        # API field: severity_modification_type
+        [ValidateSet('NONE', 'ACCEPTED', 'RECASTED')][string[]]$RiskAccepted,
         [string]$NetworkId,
         [string]$Cidr,
         [hashtable]$Tag,
@@ -634,7 +636,8 @@ Export-TIOFindings -Source AGENT -Severity high,critical -Since "7 days" -Path .
     if ($PluginFamily)         { $filters.plugin_family = $PluginFamily }
     if ($PluginType)           { $filters.plugin_type = $PluginType }
     if ($Source)               { $filters.source = $Source }
-    if ($SeverityModification) { $filters.severity_modification_type = $SeverityModification }
+    # -RiskAccepted parameter → API's severity_modification_type field
+    if ($RiskAccepted)         { $filters.severity_modification_type = $RiskAccepted }
     if ($NetworkId)            { $filters.network_id = $NetworkId }
     if ($Cidr)                 { $filters.cidr_range = $Cidr }
     if ($Tag)                  { foreach ($k in $Tag.Keys) { $filters["tag.$k"] = @($Tag[$k]) } }
