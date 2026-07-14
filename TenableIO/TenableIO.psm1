@@ -29,7 +29,7 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::S
 
 $script:ServiceName  = 'tenable-io'
 $script:BaseUrl      = 'https://cloud.tenable.com'
-$script:Session      = $null   # @{ AccessKey; SecretKey; BaseUrl } after Connect-Tio
+$script:Session      = $null   # @{ AccessKey; SecretKey; BaseUrl } after Connect-TIO
 $script:MinFreeBytes = 2GB     # exports abort if free disk on the target drive drops below this
 
 # -- helpers ---------------------------------------------------------------
@@ -162,7 +162,7 @@ function Resolve-TIOKey {
 }
 
 # -- public API ------------------------------------------------------------
-function Get-TioKeySource {
+function Get-TIOKeySource {
     <#
 .SYNOPSIS
 Report which credential store this host would use (no secrets shown).
@@ -174,7 +174,7 @@ Report which credential store this host would use (no secrets shown).
     else                         { "0600 owner-only file ($(Get-TIOKeyFile))" }
 }
 
-function Set-TioCredential {
+function Set-TIOCredential {
     <#
 .SYNOPSIS
 Prompt for the Tenable API access + secret keys and save them to the OS secret store.
@@ -182,7 +182,7 @@ Prompt for the Tenable API access + secret keys and save them to the OS secret s
 Hidden prompts (entered twice); validates with a session lookup afterwards.
 #>
     [CmdletBinding()] param([switch]$SkipValidate)
-    Write-Host "Storing Tenable API keys in $(Get-TioKeySource) (service '$script:ServiceName')." -ForegroundColor Cyan
+    Write-Host "Storing Tenable API keys in $(Get-TIOKeySource) (service '$script:ServiceName')." -ForegroundColor Cyan
     foreach ($pair in @(@('access','ACCESS'), @('secret','SECRET'))) {
         $account, $label = $pair
         $s1 = Read-Host -AsSecureString "-> Enter your Tenable $label key (hidden)"
@@ -195,12 +195,12 @@ Hidden prompts (entered twice); validates with a session lookup afterwards.
     Write-Host "Stored." -ForegroundColor Green
     if ($SkipValidate) { return }
     try {
-        $me = Connect-Tio -PassThru | ForEach-Object { Get-TioSession }
+        $me = Connect-TIO -PassThru | ForEach-Object { Get-TIOSession }
         Write-Host ("OK - authenticated as {0} ({1}), container {2}." -f $me.username, $me.name, $me.container_id) -ForegroundColor Green
     } catch { Write-Warning "Keys were stored, but validation failed: $_" }
 }
 
-function Connect-Tio {
+function Connect-TIO {
     <#
 .SYNOPSIS
 Resolve the API keys and stash them for subsequent cmdlets.
@@ -219,9 +219,9 @@ Optional explicit secret key.
     if (-not $SecretKey) { $SecretKey = Resolve-TIOKey -Account 'secret' }
     if (-not $AccessKey -or -not $SecretKey) {
         throw ("No API keys found. Provide them one of three ways:`n" +
-               "  1. Save them:  Set-TioCredential   (uses $(Get-TioKeySource))`n" +
+               "  1. Save them:  Set-TIOCredential   (uses $(Get-TIOKeySource))`n" +
                "  2. Environment: `$env:TIO_ACCESS_KEY / `$env:TIO_SECRET_KEY (or the *_CMD vault hooks)`n" +
-               "  3. Connect-Tio -AccessKey ... -SecretKey ...`n" +
+               "  3. Connect-TIO -AccessKey ... -SecretKey ...`n" +
                "Create a key pair in Tenable: Settings -> My Account -> API Keys.")
     }
     $script:Session = @{ AccessKey = $AccessKey; SecretKey = $SecretKey; BaseUrl = $BaseUrl.TrimEnd('/') }
@@ -231,7 +231,7 @@ Optional explicit secret key.
 # Shared request with retry on 429 / 5xx (matches the Python client's backoff).
 function Invoke-TIORequest {
     param([string]$Method, [string]$Path, [hashtable]$Body, [string]$What = 'request', [int]$TimeoutSec = 180)
-    if (-not $script:Session) { Connect-Tio | Out-Null }
+    if (-not $script:Session) { Connect-TIO | Out-Null }
     $uri = "$($script:Session.BaseUrl)$Path"
     $headers = @{ 'X-ApiKeys' = "accessKey=$($script:Session.AccessKey);secretKey=$($script:Session.SecretKey)"; 'Accept' = 'application/json' }
     $max = 5
@@ -254,7 +254,7 @@ function Invoke-TIORequest {
     }
 }
 
-function Get-TioSession {
+function Get-TIOSession {
     <#
 .SYNOPSIS
 Validate the connection - returns your Tenable account (the /session endpoint).
@@ -313,7 +313,7 @@ function Write-TIOExport {
     Write-Host "[ok] $Label -> $n records at $full" -ForegroundColor Green
 }
 
-function Export-TioVuln {
+function Export-TIOVuln {
     <#
 .SYNOPSIS
 Export vulnerability findings via the async export API.
@@ -349,7 +349,7 @@ Exact state(s) to export (OPEN, REOPENED, FIXED). Overrides the default; cannot 
     Write-TIOExport -Kind vulns -Body $body -Path $Path -Label 'vulns'
 }
 
-function Export-TioAsset {
+function Export-TIOAsset {
     <#
 .SYNOPSIS
 Export assets (hosts) with their attributes, tags, sources, and last-seen data.
@@ -358,7 +358,7 @@ Export assets (hosts) with their attributes, tags, sources, and last-seen data.
     Write-TIOExport -Kind assets -Body @{ chunk_size = $ChunkSize } -Path $Path -Label 'assets'
 }
 
-function Export-TioCompliance {
+function Export-TIOCompliance {
     <#
 .SYNOPSIS
 Export compliance/audit findings. Use -Since to avoid the (often huge) full history.
@@ -390,49 +390,49 @@ function Get-TIOPaged {                              # walk offset/limit paginat
 .SYNOPSIS
 List scan configurations.
 #>
-function Get-TioScan          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scans'      -What 'scans')      'scans' }
+function Get-TIOScan          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scans'      -What 'scans')      'scans' }
 <#
 .SYNOPSIS
 List scanners (sensors).
 #>
-function Get-TioScanner       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scanners'   -What 'scanners')   'scanners' }
+function Get-TIOScanner       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/scanners'   -What 'scanners')   'scanners' }
 <#
 .SYNOPSIS
 List scan policies.
 #>
-function Get-TioPolicy        { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/policies'   -What 'policies')   'policies' }
+function Get-TIOPolicy        { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/policies'   -What 'policies')   'policies' }
 <#
 .SYNOPSIS
 List networks.
 #>
-function Get-TioNetwork       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/networks'   -What 'networks')   'networks' }
+function Get-TIONetwork       { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/networks'   -What 'networks')   'networks' }
 <#
 .SYNOPSIS
 List scan exclusions.
 #>
-function Get-TioExclusion     { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/exclusions' -What 'exclusions') 'exclusions' }
+function Get-TIOExclusion     { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/exclusions' -What 'exclusions') 'exclusions' }
 <#
 .SYNOPSIS
 List users.
 #>
-function Get-TioUser          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/users'      -What 'users')      'users' }
+function Get-TIOUser          { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/users'      -What 'users')      'users' }
 <#
 .SYNOPSIS
 List user groups.
 #>
-function Get-TioGroup         { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/groups'     -What 'groups')     'groups' }
+function Get-TIOGroup         { [CmdletBinding()] param() Get-TIOProp (Invoke-TIORequest GET '/groups'     -What 'groups')     'groups' }
 <#
 .SYNOPSIS
 Get the Tenable.io server status.
 #>
-function Get-TioServerStatus  { [CmdletBinding()] param() Invoke-TIORequest GET '/server/status' -What 'server status' }
+function Get-TIOServerStatus  { [CmdletBinding()] param() Invoke-TIORequest GET '/server/status' -What 'server status' }
 <#
 .SYNOPSIS
 List tag values (paged).
 #>
-function Get-TioTag           { [CmdletBinding()] param([int]$Limit = 1000) Get-TIOPaged -Path '/tags/values' -ItemKey 'values' -Limit $Limit -What 'tag values' }
+function Get-TIOTag           { [CmdletBinding()] param([int]$Limit = 1000) Get-TIOPaged -Path '/tags/values' -ItemKey 'values' -Limit $Limit -What 'tag values' }
 
-function Get-TioAgent {
+function Get-TIOAgent {
     <#
 .SYNOPSIS
 List linked agents with their last-connect times.
@@ -441,26 +441,26 @@ Agents live under the agent-manager scanner (id 1 by default). Pass -ScannerId t
 target one scanner (fast); use -AllScanners to sweep every scanner (thorough, slow on big tenants).
 #>
     [CmdletBinding()] param([int]$ScannerId = 1, [switch]$AllScanners, [int]$Limit = 1000)
-    $scanners = if ($AllScanners) { @(Get-TioScanner) } else { @([pscustomobject]@{ id = $ScannerId }) }
+    $scanners = if ($AllScanners) { @(Get-TIOScanner) } else { @([pscustomobject]@{ id = $ScannerId }) }
     foreach ($sc in $scanners) {
         if (-not (Get-TIOProp $sc 'id')) { continue }
         Get-TIOPaged -Path "/scanners/$($sc.id)/agents" -ItemKey 'agents' -Limit $Limit -What "agents (scanner $($sc.id))"
     }
 }
-function Get-TioAgentGroup {
+function Get-TIOAgentGroup {
     <#
 .SYNOPSIS
 List agent groups across all scanners.
 #>
     [CmdletBinding()] param()
-    foreach ($sc in @(Get-TioScanner)) {
+    foreach ($sc in @(Get-TIOScanner)) {
         if (-not (Get-TIOProp $sc 'id')) { continue }
         Get-TIOProp (Invoke-TIORequest GET "/scanners/$($sc.id)/agent-groups" -What "agent-groups (scanner $($sc.id))") 'groups'
     }
 }
 
-Export-ModuleMember -Function Connect-Tio, Set-TioCredential, Get-TioSession,
-    Get-TioKeySource, Export-TioVuln, Export-TioAsset, Export-TioCompliance,
-    Get-TioScan, Get-TioScanner, Get-TioAgent, Get-TioAgentGroup, Get-TioTag,
-    Get-TioPolicy, Get-TioNetwork, Get-TioExclusion, Get-TioUser, Get-TioGroup,
-    Get-TioServerStatus
+Export-ModuleMember -Function Connect-TIO, Set-TIOCredential, Get-TIOSession,
+    Get-TIOKeySource, Export-TIOVuln, Export-TIOAsset, Export-TIOCompliance,
+    Get-TIOScan, Get-TIOScanner, Get-TIOAgent, Get-TIOAgentGroup, Get-TIOTag,
+    Get-TIOPolicy, Get-TIONetwork, Get-TIOExclusion, Get-TIOUser, Get-TIOGroup,
+    Get-TIOServerStatus

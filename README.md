@@ -28,9 +28,9 @@ Runs on **Windows PowerShell 5.1** (the version built into Windows — nothing t
 ## Get started
 
 ```powershell
-Set-TioCredential    # hidden prompts for your access + secret key, saves to the OS store
-Connect-Tio          # resolves the keys for this session
-Get-TioSession       # validate — returns your Tenable account
+Set-TIOCredential    # hidden prompts for your access + secret key, saves to the OS store
+Connect-TIO          # resolves the keys for this session
+Get-TIOSession       # validate — returns your Tenable account
 ```
 
 Create a key pair in Tenable under **Settings → My Account → API Keys**.
@@ -43,14 +43,14 @@ it emits objects to the pipeline.
 
 ```powershell
 # stream straight to a JSONL file
-Export-TioVuln -Path ./current-vulns.jsonl         # default: CURRENT findings (OPEN + REOPENED)
-Export-TioVuln -All -Path ./all-vulns.jsonl        # ALL findings incl. FIXED history (large - opt-in)
-Export-TioVuln -State OPEN -Severity high,critical -Path ./open-crit.jsonl
-Export-TioAsset -Path ./assets.jsonl
-Export-TioCompliance -Since (Get-Date).AddDays(-90) -Path ./compliance.jsonl
+Export-TIOVuln -Path ./current-vulns.jsonl         # default: CURRENT findings (OPEN + REOPENED)
+Export-TIOVuln -All -Path ./all-vulns.jsonl        # ALL findings incl. FIXED history (large - opt-in)
+Export-TIOVuln -State OPEN -Severity high,critical -Path ./open-crit.jsonl
+Export-TIOAsset -Path ./assets.jsonl
+Export-TIOCompliance -Since (Get-Date).AddDays(-90) -Path ./compliance.jsonl
 
 # …or work with the objects directly in the pipeline
-Export-TioVuln -State OPEN | Where-Object { $_.severity -eq 'critical' } | Measure-Object
+Export-TIOVuln -State OPEN | Where-Object { $_.severity -eq 'critical' } | Measure-Object
 ```
 
 > Exports can be large. The file writer **aborts if free disk on the target drive drops below 2 GB**,
@@ -61,16 +61,16 @@ Export-TioVuln -State OPEN | Where-Object { $_.severity -eq 'critical' } | Measu
 Read-only cmdlets for the config/inventory endpoints — they return objects, so pipe them anywhere:
 
 ```powershell
-Get-TioScanner | Select-Object name, status, type
-Get-TioScan    | Where-Object status -eq 'running'
-Get-TioUser    | Measure-Object
+Get-TIOScanner | Select-Object name, status, type
+Get-TIOScan    | Where-Object status -eq 'running'
+Get-TIOUser    | Measure-Object
 
 # agents live under the agent-manager scanner (id 1 by default) — great for coverage/hygiene checks
-Get-TioAgent | Where-Object { [datetimeoffset]::FromUnixTimeSeconds($_.last_connect).UtcDateTime -lt (Get-Date).AddDays(-30) }
-Get-TioAgent -AllScanners       # thorough sweep of every scanner (slower on big tenants)
+Get-TIOAgent | Where-Object { [datetimeoffset]::FromUnixTimeSeconds($_.last_connect).UtcDateTime -lt (Get-Date).AddDays(-30) }
+Get-TIOAgent -AllScanners       # thorough sweep of every scanner (slower on big tenants)
 ```
 
-Also: `Get-TioAgentGroup`, `-Tag`, `-Policy`, `-Network`, `-Exclusion`, `-Group`, `-ServerStatus`.
+Also: `Get-TIOAgentGroup`, `-Tag`, `-Policy`, `-Network`, `-Exclusion`, `-Group`, `-ServerStatus`.
 
 ## Credentials
 
@@ -91,7 +91,7 @@ The OS secret store is chosen automatically — no key is ever placed on the com
 | Windows | **DPAPI-encrypted file** (per-user, encrypted at rest) |
 | Linux / macOS | a **`0600` owner-only file** — the read is refused unless it's owner-only (**fail closed**) |
 
-`Get-TioKeySource` prints which store this host will use (no secrets shown).
+`Get-TIOKeySource` prints which store this host will use (no secrets shown).
 
 ### Headless servers (RHEL, CI) — pull from your vault
 
@@ -113,15 +113,15 @@ ever to `cloud.tenable.com` over TLS.
 
 | Cmdlet | Status | Purpose |
 | --- | --- | --- |
-| `Set-TioCredential` | ✅ | Prompt for + store the API keys; validate. |
-| `Connect-Tio` | ✅ | Resolve keys for the session. |
-| `Get-TioSession` | ✅ | Validate the connection (the `/session` endpoint). |
-| `Get-TioKeySource` | ✅ | Report which credential store is in use. |
-| `Export-TioVuln` | ✅ | Vulnerability findings (state / severity / since filters). |
-| `Export-TioAsset` | ✅ | Assets (hosts) with attributes, tags, sources. |
-| `Export-TioCompliance` | ✅ | Compliance findings (use `-Since` to bound the history). |
-| `Get-TioScan` / `-Scanner` / `-Policy` / `-Network` / `-Exclusion` / `-User` / `-Group` / `-ServerStatus` | ✅ | Config & inventory reads. |
-| `Get-TioAgent` / `-AgentGroup` / `-Tag` | ✅ | Agents (with last-connect), agent groups, and tags. |
+| `Set-TIOCredential` | ✅ | Prompt for + store the API keys; validate. |
+| `Connect-TIO` | ✅ | Resolve keys for the session. |
+| `Get-TIOSession` | ✅ | Validate the connection (the `/session` endpoint). |
+| `Get-TIOKeySource` | ✅ | Report which credential store is in use. |
+| `Export-TIOVuln` | ✅ | Vulnerability findings (state / severity / since filters). |
+| `Export-TIOAsset` | ✅ | Assets (hosts) with attributes, tags, sources. |
+| `Export-TIOCompliance` | ✅ | Compliance findings (use `-Since` to bound the history). |
+| `Get-TIOScan` / `-Scanner` / `-Policy` / `-Network` / `-Exclusion` / `-User` / `-Group` / `-ServerStatus` | ✅ | Config & inventory reads. |
+| `Get-TIOAgent` / `-AgentGroup` / `-Tag` | ✅ | Agents (with last-connect), agent groups, and tags. |
 
 See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full Tenable VM API-coverage roadmap (what's shipped and what's planned, by domain).
 
