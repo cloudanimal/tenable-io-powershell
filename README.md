@@ -53,6 +53,50 @@ Export-TIOCompliance -Since (Get-Date).AddDays(-90) -Path ./compliance.jsonl
 Export-TIOVuln -State OPEN | Where-Object { $_.severity -eq 'critical' } | Measure-Object
 ```
 
+### Targeted pulls (filters applied server-side)
+
+`Export-TIOVuln` filters are sent to Tenable, so **only the matching slice is transferred** — no
+downloading everything and grepping locally:
+
+```powershell
+# critical, high-VPR findings on one business unit → the "fix these now" list
+Export-TIOVuln -Severity critical -VprMin 9 -Tag @{ BU = 'AMI' } -Path ./crown-jewels-crit.jsonl
+
+# everything a specific plugin or plugin family reports, within a CIDR
+Export-TIOVuln -PluginId 51192,57582 -Cidr 10.20.0.0/16 -Path ./cert-issues.jsonl
+Export-TIOVuln -PluginFamily 'Windows' -Severity high,critical
+
+# scope to a network and a VPR band
+Export-TIOVuln -NetworkId 00000000-0000-0000-0000-000000000000 -VprMin 7 -VprMax 8.9
+```
+
+| Filter | Parameter |
+| --- | --- |
+| State | `-All` · `-State OPEN,REOPENED,FIXED` |
+| Severity | `-Severity info,low,medium,high,critical` |
+| Risk (VPR) | `-VprMin` / `-VprMax` (0–10) — *the export filters on VPR, not CVSS* |
+| Plugin | `-PluginId 19506,…` · `-PluginFamily 'Windows',…` · `-PluginType remote,local,combined,…` |
+| Source | `-Source NESSUS,AGENT,NNM` — agent- vs network- vs passively-collected |
+| Severity origin | `-SeverityModification NONE,ACCEPTED,RECASTED` — audit accepted-risk / recast findings |
+| Network | `-NetworkId <uuid>` · `-Cidr 10.0.0.0/8` |
+| Tags | `-Tag @{ BU = 'AMI'; Environment = 'Production','Staging' }` |
+| Time | `-Since` · `-FirstFound` · `-LastFound` · `-LastFixed` · `-IndexedSince` (each a `[datetime]`) |
+
+```powershell
+# remediation verification — what was fixed in the last month
+Export-TIOVuln -State FIXED -LastFixed (Get-Date).AddDays(-30) -Path ./fixed-this-month.jsonl
+
+# governance — everything currently accepted-risk or recast
+Export-TIOVuln -SeverityModification ACCEPTED,RECASTED -All
+
+# coverage — only agent-collected high/critical findings
+Export-TIOVuln -Source AGENT -Severity high,critical
+```
+
+> **CVSS note:** Tenable's vuln export accepts a VPR range but rejects `cvss_base_score`
+> (`BAD_REQUEST_UNKNOWN_PROPERTY`). To slice by CVSS, filter client-side after the pull:
+> `Export-TIOVuln -Severity critical | Where-Object { $_.plugin.cvss3_base_score -ge 9 }`.
+
 > Exports can be large. The file writer **aborts if free disk on the target drive drops below 2 GB**,
 > and `-Since` on compliance avoids pulling the (often enormous) full audit history.
 

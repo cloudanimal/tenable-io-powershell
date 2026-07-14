@@ -292,6 +292,11 @@ function Invoke-TIOExport {
     }
 }
 
+# Seconds since the Unix epoch (UTC), for the export API's time filters.
+function Get-TIOUnixTime { param([datetime]$Dt)
+    [int64](New-TimeSpan -Start ([datetime]'1970-01-01Z') -End $Dt.ToUniversalTime()).TotalSeconds
+}
+
 # Emit to the pipeline, or stream to a JSONL file with a free-disk safety net.
 function Write-TIOExport {
     param([string]$Kind, [hashtable]$Body, [string]$Path, [string]$Label)
@@ -320,12 +325,52 @@ Export vulnerability findings via the async export API.
 .DESCRIPTION
 By default exports only CURRENT findings (OPEN + REOPENED). Pass -All to also include FIXED
 (remediated) history - i.e. every finding - which can be very large. Or pass -State to choose exact
-states. With -Path, streams JSONL to a file (free-disk guarded); else emits objects.
+states. Additional filters (severity, VPR, plugin, network, tag) are applied server-side so only the
+matching slice is transferred. With -Path, streams JSONL to a file (free-disk guarded); else emits objects.
 .PARAMETER All
 Export ALL findings including FIXED/remediated history. This is the full, potentially huge pull, so
 it must be requested explicitly. Cannot be combined with -State.
 .PARAMETER State
 Exact state(s) to export (OPEN, REOPENED, FIXED). Overrides the default; cannot be combined with -All.
+.PARAMETER Severity
+Restrict to one or more severities (info, low, medium, high, critical).
+.PARAMETER VprMin
+Only findings whose VPR score is >= this value (0-10). Note: the export API filters on VPR, not CVSS.
+.PARAMETER VprMax
+Only findings whose VPR score is <= this value (0-10).
+.PARAMETER PluginId
+Restrict to specific Nessus plugin ID(s).
+.PARAMETER PluginFamily
+Restrict to specific plugin family name(s), e.g. 'Windows', 'General'.
+.PARAMETER NetworkId
+Restrict to a network UUID (the default network is all-zeros).
+.PARAMETER Cidr
+Restrict to assets within a CIDR range, e.g. '10.0.0.0/8'.
+.PARAMETER Tag
+Restrict by asset tag(s). A hashtable of category -> value(s):
+-Tag @{ BU = 'AMI'; Environment = 'Production','Staging' }
+.PARAMETER Source
+Restrict to findings from a given collection source: NESSUS (network scan), AGENT, or NNM (passive).
+.PARAMETER SeverityModification
+Restrict by how severity was set: NONE (unmodified), ACCEPTED (accept-risk), or RECASTED.
+.PARAMETER PluginType
+Restrict to a plugin type: remote, local, combined, summary, reputation, or third_party.
+.PARAMETER Since
+Only findings seen since this date/time (the 'since' convenience filter; bounds by last-seen).
+.PARAMETER FirstFound
+Only findings first detected on/after this date/time (net-new findings in a window).
+.PARAMETER LastFound
+Only findings last seen on/after this date/time (precise last-seen cutoff).
+.PARAMETER LastFixed
+Only findings fixed on/after this date/time - remediation verification (pair with -State FIXED / -All).
+.PARAMETER IndexedSince
+Only findings indexed into Tenable on/after this date/time (data-freshness / pipeline use).
+.EXAMPLE
+Export-TIOVuln -Severity critical -VprMin 9 -Tag @{ BU = 'AMI' } -Path ./crown-jewels-crit.jsonl
+.EXAMPLE
+Export-TIOVuln -State FIXED -LastFixed (Get-Date).AddDays(-30)        # what got remediated this month
+.EXAMPLE
+Export-TIOVuln -Source AGENT -Severity high,critical                  # agent-collected high/crit only
 #>
     [CmdletBinding(DefaultParameterSetName = 'Current')] param(
         [Parameter(ParameterSetName = 'All')]
@@ -333,19 +378,53 @@ Exact state(s) to export (OPEN, REOPENED, FIXED). Overrides the default; cannot 
         [Parameter(ParameterSetName = 'ByState')]
         [ValidateSet('OPEN', 'REOPENED', 'FIXED')][string[]]$State,
         [ValidateSet('info', 'low', 'medium', 'high', 'critical')][string[]]$Severity,
+        [ValidateRange(0, 10)][double]$VprMin,
+        [ValidateRange(0, 10)][double]$VprMax,
+        [int[]]$PluginId,
+        [string[]]$PluginFamily,
+        [ValidateSet('remote', 'local', 'combined', 'summary', 'reputation', 'third_party')]
+        [string]$PluginType,
+        [ValidateSet('NESSUS', 'AGENT', 'NNM')][string[]]$Source,
+        [ValidateSet('NONE', 'ACCEPTED', 'RECASTED')][string[]]$SeverityModification,
+        [string]$NetworkId,
+        [string]$Cidr,
+        [hashtable]$Tag,
         [datetime]$Since,
+        [datetime]$FirstFound,
+        [datetime]$LastFound,
+        [datetime]$LastFixed,
+        [datetime]$IndexedSince,
         [int]$NumAssets = 500,
         [string]$Path
     )
-    $states = if ($All) { @('OPEN', 'REOPENED', 'FIXED') }
-              elseif ($State) { $State }
-              else { @('OPEN', 'REOPENED') }        # default: current findings only, not FIXED history
+    # @(...) forces an array: a bare if-expression unwraps a single-element result to a scalar,
+    # which would serialize 'state' as "FIXED" instead of ["FIXED"] and the API rejects it (400).
+    $states = @( if ($All) { 'OPEN', 'REOPENED', 'FIXED' }
+                 elseif ($State) { $State }
+                 else { 'OPEN', 'REOPENED' } )       # default: current findings only, not FIXED history
     Write-Verbose ("Exporting vuln states: {0}" -f ($states -join ', '))
     $filters = @{ state = $states }
-    if ($Severity) { $filters.severity = $Severity }
-    if ($Since)    { $filters.since = [int64](New-TimeSpan -Start ([datetime]'1970-01-01Z') -End $Since.ToUniversalTime()).TotalSeconds }
-    $body = @{ num_assets = $NumAssets; include_unlicensed = $true }
-    if ($filters.Count) { $body.filters = $filters }
+    if ($Severity)             { $filters.severity = $Severity }
+    if ($PluginId)             { $filters.plugin_id = $PluginId }
+    if ($PluginFamily)         { $filters.plugin_family = $PluginFamily }
+    if ($PluginType)           { $filters.plugin_type = $PluginType }
+    if ($Source)               { $filters.source = $Source }
+    if ($SeverityModification) { $filters.severity_modification_type = $SeverityModification }
+    if ($NetworkId)            { $filters.network_id = $NetworkId }
+    if ($Cidr)                 { $filters.cidr_range = $Cidr }
+    if ($Tag)                  { foreach ($k in $Tag.Keys) { $filters["tag.$k"] = @($Tag[$k]) } }
+    if ($PSBoundParameters.ContainsKey('Since'))        { $filters.since = Get-TIOUnixTime $Since }
+    if ($PSBoundParameters.ContainsKey('FirstFound'))   { $filters.first_found = Get-TIOUnixTime $FirstFound }
+    if ($PSBoundParameters.ContainsKey('LastFound'))    { $filters.last_found = Get-TIOUnixTime $LastFound }
+    if ($PSBoundParameters.ContainsKey('LastFixed'))    { $filters.last_fixed = Get-TIOUnixTime $LastFixed }
+    if ($PSBoundParameters.ContainsKey('IndexedSince')) { $filters.indexed_at = Get-TIOUnixTime $IndexedSince }
+    if ($PSBoundParameters.ContainsKey('VprMin') -or $PSBoundParameters.ContainsKey('VprMax')) {
+        $vpr = @{}
+        if ($PSBoundParameters.ContainsKey('VprMin')) { $vpr.gte = $VprMin }
+        if ($PSBoundParameters.ContainsKey('VprMax')) { $vpr.lte = $VprMax }
+        $filters.vpr_score = $vpr
+    }
+    $body = @{ num_assets = $NumAssets; include_unlicensed = $true; filters = $filters }
     Write-TIOExport -Kind vulns -Body $body -Path $Path -Label 'vulns'
 }
 

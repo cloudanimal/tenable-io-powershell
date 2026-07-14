@@ -20,7 +20,11 @@ prefix.
 
 ## 2. Bulk exports (async: start -> poll -> chunks)
 - ✅ `Export-TIOVuln` · `Export-TIOAsset` · `Export-TIOCompliance`
-- ⬜ `Get-TIOExportStatus` · `Stop-TIOExport` (cancel)
+- ✅ `Export-TIOVuln` full server-side filter coverage: state, severity, VPR range, plugin id/family/type,
+  source (NESSUS/AGENT/NNM), severity-modification (accept-risk/recast), network/CIDR, tags, and the time
+  filters since/first_found/last_found/last_fixed/indexed_at
+- ⬜ Filter parity for `Export-TIOAsset` (tags/network/sources/dates) and `Export-TIOCompliance` (PASSED/FAILED, audit/benchmark)
+- ⬜ `Get-TIOExportStatus` · `Stop-TIOExport` (cancel) · resume a dropped `-All` pull by UUID
 
 ## 3. Workbenches (fast interactive queries, no full export) 🔜
 - ⬜ `Get-TIOVulnerability` (by filter) · `Get-TIOVulnerabilityInfo` (plugin detail) · `Get-TIOVulnerabilityOutput`
