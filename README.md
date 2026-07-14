@@ -122,6 +122,8 @@ ever to `cloud.tenable.com` over TLS.
 | `Get-TenableIOScan` / `-Scanner` / `-Policy` / `-Network` / `-Exclusion` / `-User` / `-Group` / `-ServerStatus` | ✅ | Config & inventory reads. |
 | `Get-TenableIOAgent` / `-AgentGroup` / `-Tag` | ✅ | Agents (with last-connect), agent groups, and tags. |
 
+See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full Tenable VM API-coverage roadmap (what's shipped and what's planned, by domain).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
