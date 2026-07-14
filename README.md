@@ -43,7 +43,8 @@ it emits objects to the pipeline.
 
 ```powershell
 # stream straight to a JSONL file
-Export-TenableIOVuln -Path ./vulns.jsonl                 # every state (open, reopened, fixed)
+Export-TenableIOVuln -Path ./current-vulns.jsonl         # default: CURRENT findings (OPEN + REOPENED)
+Export-TenableIOVuln -All -Path ./all-vulns.jsonl        # ALL findings incl. FIXED history (large - opt-in)
 Export-TenableIOVuln -State OPEN -Severity high,critical -Path ./open-crit.jsonl
 Export-TenableIOAsset -Path ./assets.jsonl
 Export-TenableIOCompliance -Since (Get-Date).AddDays(-90) -Path ./compliance.jsonl

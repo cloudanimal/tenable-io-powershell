@@ -318,18 +318,30 @@ function Export-TenableIOVuln {
 .SYNOPSIS
 Export vulnerability findings via the async export API.
 .DESCRIPTION
-Defaults to every state (OPEN, REOPENED, FIXED) for full history - drop FIXED for
-just current. With -Path, streams JSONL to a file (with a free-disk guard); else emits objects.
+By default exports only CURRENT findings (OPEN + REOPENED). Pass -All to also include FIXED
+(remediated) history - i.e. every finding - which can be very large. Or pass -State to choose exact
+states. With -Path, streams JSONL to a file (free-disk guarded); else emits objects.
+.PARAMETER All
+Export ALL findings including FIXED/remediated history. This is the full, potentially huge pull, so
+it must be requested explicitly. Cannot be combined with -State.
+.PARAMETER State
+Exact state(s) to export (OPEN, REOPENED, FIXED). Overrides the default; cannot be combined with -All.
 #>
-    [CmdletBinding()] param(
-        [ValidateSet('OPEN', 'REOPENED', 'FIXED')][string[]]$State = @('OPEN', 'REOPENED', 'FIXED'),
+    [CmdletBinding(DefaultParameterSetName = 'Current')] param(
+        [Parameter(ParameterSetName = 'All')]
+        [switch]$All,
+        [Parameter(ParameterSetName = 'ByState')]
+        [ValidateSet('OPEN', 'REOPENED', 'FIXED')][string[]]$State,
         [ValidateSet('info', 'low', 'medium', 'high', 'critical')][string[]]$Severity,
         [datetime]$Since,
         [int]$NumAssets = 500,
         [string]$Path
     )
-    $filters = @{}
-    if ($State)    { $filters.state = $State }
+    $states = if ($All) { @('OPEN', 'REOPENED', 'FIXED') }
+              elseif ($State) { $State }
+              else { @('OPEN', 'REOPENED') }        # default: current findings only, not FIXED history
+    Write-Verbose ("Exporting vuln states: {0}" -f ($states -join ', '))
+    $filters = @{ state = $states }
     if ($Severity) { $filters.severity = $Severity }
     if ($Since)    { $filters.since = [int64](New-TimeSpan -Start ([datetime]'1970-01-01Z') -End $Since.ToUniversalTime()).TotalSeconds }
     $body = @{ num_assets = $NumAssets; include_unlicensed = $true }
