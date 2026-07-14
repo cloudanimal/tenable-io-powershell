@@ -7,15 +7,15 @@
     Description       = 'PowerShell client for Tenable Vulnerability Management (Tenable.io / cloud.tenable.com). Runs on Windows PowerShell 5.1 and PowerShell 7+. Cross-platform credential handling: SecretManagement, Windows DPAPI, or a fail-closed 0600 file, with env-var and vault-command hooks. Sibling of tenable-io-python.'
     PowerShellVersion = '5.1'
     CompatiblePSEditions = @('Desktop', 'Core')
-    FunctionsToExport = @('Connect-TIO', 'Set-TIOCredential', 'Get-TIOSession',
-                          'Get-TIOKeySource', 'Export-TIOVuln', 'Export-TIOAsset',
+    FunctionsToExport = @('Connect-TIO', 'Set-TIOCredential', 'Set-TIOExportDefaults', 'Get-TIOSession',
+                          'Get-TIOKeySource', 'Export-TIOFindings', 'Export-TIOAsset',
                           'Export-TIOCompliance', 'Get-TIOScan', 'Get-TIOScanner',
                           'Get-TIOAgent', 'Get-TIOAgentGroup', 'Get-TIOTag',
                           'Get-TIOPolicy', 'Get-TIONetwork', 'Get-TIOExclusion',
                           'Get-TIOUser', 'Get-TIOGroup', 'Get-TIOServerStatus')
     CmdletsToExport   = @()
     VariablesToExport = @()
-    AliasesToExport   = @()
+    AliasesToExport   = @('Export-TIOVuln')
     PrivateData = @{
         PSData = @{
             Tags       = @('Tenable', 'TenableIO', 'VulnerabilityManagement', 'Security', 'InfoSec', 'API')

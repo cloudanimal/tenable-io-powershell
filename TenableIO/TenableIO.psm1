@@ -30,6 +30,7 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::S
 $script:ServiceName  = 'tenable-io'
 $script:BaseUrl      = 'https://cloud.tenable.com'
 $script:Session      = $null   # @{ AccessKey; SecretKey; BaseUrl } after Connect-TIO
+$script:TIOCredManApiReady = $false
 $script:MinFreeBytes = 2GB     # exports abort if free disk on the target drive drops below this
 
 # -- helpers ---------------------------------------------------------------
@@ -71,6 +72,111 @@ function Get-TIOVaultName {
         if ($v) { return $v.Name }
     } catch { }
     return $null
+}
+
+function Initialize-TIOCredManApi {
+    if (-not $script:OnWindows) { return }
+    if ($script:TIOCredManApiReady) { return }
+
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class TIOCredManNative {
+    public const int CRED_TYPE_GENERIC = 1;
+    public const int CRED_PERSIST_LOCAL_MACHINE = 2;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct CREDENTIAL {
+        public int Flags;
+        public int Type;
+        public string TargetName;
+        public string Comment;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+        public int CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public int Persist;
+        public int AttributeCount;
+        public IntPtr Attributes;
+        public string TargetAlias;
+        public string UserName;
+    }
+
+    [DllImport("advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr credentialPtr);
+
+    [DllImport("advapi32.dll", EntryPoint = "CredWriteW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CredWrite(ref CREDENTIAL userCredential, int flags);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern void CredFree([In] IntPtr cred);
+}
+"@ | Out-Null
+
+    $script:TIOCredManApiReady = $true
+}
+
+function Get-TIOCredManTargetName {
+    param([ValidateSet('access','secret')][string]$Account)
+    return "Tenable API - $Account"
+}
+
+function Get-TIOWindowsCredential {
+    param([ValidateSet('access','secret')][string]$Account)
+
+    if (-not $script:OnWindows) { return '' }
+    Initialize-TIOCredManApi
+
+    $target = Get-TIOCredManTargetName -Account $Account
+    $ptr = [IntPtr]::Zero
+    $ok = [TIOCredManNative]::CredRead($target, [TIOCredManNative]::CRED_TYPE_GENERIC, 0, [ref]$ptr)
+    if (-not $ok -or $ptr -eq [IntPtr]::Zero) { return '' }
+
+    try {
+        $cred = [Runtime.InteropServices.Marshal]::PtrToStructure($ptr, [type][TIOCredManNative+CREDENTIAL])
+        if ($cred.CredentialBlobSize -le 0 -or $cred.CredentialBlob -eq [IntPtr]::Zero) { return '' }
+
+        $blob = New-Object byte[] $cred.CredentialBlobSize
+        [Runtime.InteropServices.Marshal]::Copy($cred.CredentialBlob, $blob, 0, $cred.CredentialBlobSize)
+        return [Text.Encoding]::Unicode.GetString($blob).TrimEnd([char]0)
+    }
+    finally {
+        [TIOCredManNative]::CredFree($ptr)
+    }
+}
+
+function Set-TIOWindowsCredential {
+    param(
+        [ValidateSet('access','secret')][string]$Account,
+        [string]$Value
+    )
+
+    if (-not $script:OnWindows) { return $false }
+    Initialize-TIOCredManApi
+
+    $target = Get-TIOCredManTargetName -Account $Account
+    $bytes = [Text.Encoding]::Unicode.GetBytes($Value)
+    $blobPtr = [IntPtr]::Zero
+
+    try {
+        $blobPtr = [Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
+        [Runtime.InteropServices.Marshal]::Copy($bytes, 0, $blobPtr, $bytes.Length)
+
+        $cred = New-Object TIOCredManNative+CREDENTIAL
+        $cred.Type = [TIOCredManNative]::CRED_TYPE_GENERIC
+        $cred.TargetName = $target
+        $cred.CredentialBlobSize = $bytes.Length
+        $cred.CredentialBlob = $blobPtr
+        $cred.Persist = [TIOCredManNative]::CRED_PERSIST_LOCAL_MACHINE
+        $cred.UserName = $Account
+
+        return [TIOCredManNative]::CredWrite([ref]$cred, 0)
+    }
+    finally {
+        if ($blobPtr -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::FreeHGlobal($blobPtr)
+        }
+    }
 }
 
 # Fail closed: on Unix, refuse the key file unless it's owner-only (a bad umask or a planted file
@@ -127,11 +233,17 @@ function Get-TIOStoreKey {
     $vault = Get-TIOVaultName
     if ($vault) {
         try {
-            $s = Get-Secret -Name "$script:ServiceName-$Account" -Vault $vault -AsPlainText -ErrorAction Stop
+            $s = Get-Secret -Name "Tenable API - $Account" -Vault $vault -AsPlainText -ErrorAction Stop
             if ($s) { return $s }
         } catch { }
     }
-    # 2. file store (DPAPI-encrypted on Windows, 0600 plaintext on Unix)
+    # 2. Windows Credential Manager
+    if ($script:OnWindows) {
+        $winValue = Get-TIOWindowsCredential -Account $Account
+        if ($winValue) { return $winValue }
+    }
+
+    # 3. file store (DPAPI-encrypted on Windows fallback, 0600 plaintext on Unix)
     $store = Get-TIOFileStore
     if ($store.ContainsKey($Account) -and $store[$Account]) {
         $val = $store[$Account]
@@ -145,7 +257,11 @@ function Set-TIOStoreKey {
     param([ValidateSet('access','secret')][string]$Account, [string]$Value)
     $vault = Get-TIOVaultName
     if ($vault) {
-        try { Set-Secret -Name "$script:ServiceName-$Account" -Secret $Value -Vault $vault -ErrorAction Stop; return $true } catch { }
+        try { Set-Secret -Name "Tenable API - $Account" -Secret $Value -Vault $vault -ErrorAction Stop; return $true } catch { }
+    }
+
+    if ($script:OnWindows) {
+        try { if (Set-TIOWindowsCredential -Account $Account -Value $Value) { return $true } } catch { }
     }
     return (Set-TIOFileStore -Account $Account -Value $Value)
 }
@@ -170,8 +286,106 @@ Report which credential store this host would use (no secrets shown).
     [CmdletBinding()] [OutputType([string])] param()
     $vault = Get-TIOVaultName
     if     ($vault)              { "SecretManagement vault '$vault'" }
-    elseif ($script:OnWindows)   { "Windows DPAPI file ($(Get-TIOKeyFile))" }
+    elseif ($script:OnWindows)   { "Windows Credential Manager (Tenable API - access / secret)" }
     else                         { "0600 owner-only file ($(Get-TIOKeyFile))" }
+}
+
+function Set-TIOExportDefaults {
+    <#
+.SYNOPSIS
+Set default parameter values for Export-TIOFindings.
+.DESCRIPTION
+This function configures $PSDefaultParameterValues to apply defaults to all Export-TIOFindings calls
+in the current session. Specify any parameter and its default value. Common use cases:
+  - Set default Severity (e.g., high,critical)
+  - Set default State (e.g., OPEN)
+  - Set default output Path
+  - Set default NumAssets
+.PARAMETER Severity
+Default severity levels (info, low, medium, high, critical).
+.PARAMETER State
+Default state(s) (OPEN, REOPENED, FIXED).
+.PARAMETER Path
+Default output path for exports.
+.PARAMETER NumAssets
+Default number of assets per request.
+.EXAMPLE
+Set-TIOExportDefaults -Severity high,critical -Since "7 days"
+Export-TIOFindings -Path ./findings.jsonl     # uses high,critical severity and last 7 days
+.EXAMPLE
+Set-TIOExportDefaults -Path "C:\TIO_Exports"
+#>
+    [CmdletBinding()] param(
+        [ValidateSet('info', 'low', 'medium', 'high', 'critical')][string[]]$Severity,
+        [ValidateSet('OPEN', 'REOPENED', 'FIXED')][string[]]$State,
+        [string]$Path,
+        [int]$NumAssets
+    )
+    
+    if ($Severity) { $PSDefaultParameterValues['Export-TIOFindings:Severity'] = $Severity }
+    if ($State) { $PSDefaultParameterValues['Export-TIOFindings:State'] = $State }
+    if ($Path) { $PSDefaultParameterValues['Export-TIOFindings:Path'] = $Path }
+    if ($PSBoundParameters.ContainsKey('NumAssets')) { $PSDefaultParameterValues['Export-TIOFindings:NumAssets'] = $NumAssets }
+    
+    Write-Host "Export defaults updated:" -ForegroundColor Cyan
+    $PSDefaultParameterValues.GetEnumerator() | Where-Object { $_.Name -like 'Export-TIO*' } | ForEach-Object {
+        Write-Host "  $($_.Name) = $($_.Value)" -ForegroundColor Green
+    }
+}
+
+function ConvertTo-TIORelativeDate {
+    <#
+.SYNOPSIS
+Parse relative date strings like "7 days", "7d", "2 weeks" into a datetime.
+.DESCRIPTION
+Accepts formats like:
+  "7 days", "7d", "7days"
+  "2 weeks", "2w"
+  "1 year", "1y"
+  "12 hours", "12h" — treated as fraction of day (12/24 = 0.5d)
+Also accepts absolute datetime objects (returns as-is).
+#>
+    param([object]$Value)
+    
+    # If already a datetime, return it
+    if ($Value -is [datetime]) { return $Value }
+    
+    # If null or empty, return null
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    
+    # Parse string
+    $str = $Value.ToString().Trim()
+    
+    # Try to match common patterns
+    $patterns = @(
+        @{ regex = '^\s*(\d+(?:\.\d+)?)\s*d(?:ays?)?\s*$'; unit = 'days' },
+        @{ regex = '^\s*(\d+(?:\.\d+)?)\s*w(?:eeks?)?\s*$'; unit = 'weeks' },
+        @{ regex = '^\s*(\d+(?:\.\d+)?)\s*y(?:ears?)?\s*$'; unit = 'years' },
+        @{ regex = '^\s*(\d+(?:\.\d+)?)\s*h(?:ours?)?\s*$'; unit = 'hours' },
+        @{ regex = '^\s*(\d+(?:\.\d+)?)\s*m(?:inutes?)?\s*$'; unit = 'minutes' }
+    )
+    
+    foreach ($pattern in $patterns) {
+        if ($str -match $pattern.regex) {
+            $value = [double]$Matches[1]
+            $now = Get-Date
+            
+            switch ($pattern.unit) {
+                'days'   { return $now.AddDays(-$value) }
+                'weeks'  { return $now.AddDays(-($value * 7)) }
+                'years'  { return $now.AddYears(-[int]$value) }
+                'hours'  { return $now.AddHours(-$value) }
+                'minutes' { return $now.AddMinutes(-$value) }
+            }
+        }
+    }
+    
+    # Try to parse as absolute date
+    try {
+        return [datetime]::Parse($str)
+    } catch {
+        throw "Invalid date format: '$Value'. Use format like '7 days', '7d', '2 weeks', or an absolute date."
+    }
 }
 
 function Set-TIOCredential {
@@ -318,7 +532,7 @@ function Write-TIOExport {
     Write-Host "[ok] $Label -> $n records at $full" -ForegroundColor Green
 }
 
-function Export-TIOVuln {
+function Export-TIOFindings {
     <#
 .SYNOPSIS
 Export vulnerability findings via the async export API.
@@ -333,7 +547,7 @@ it must be requested explicitly. Cannot be combined with -State.
 .PARAMETER State
 Exact state(s) to export (OPEN, REOPENED, FIXED). Overrides the default; cannot be combined with -All.
 .PARAMETER Severity
-Restrict to one or more severities (info, low, medium, high, critical).
+Restrict to one or more severities (info, low, medium, high, critical). Default: all severities.
 .PARAMETER VprMin
 Only findings whose VPR score is >= this value (0-10). Note: the export API filters on VPR, not CVSS.
 .PARAMETER VprMax
@@ -356,7 +570,10 @@ Restrict by how severity was set: NONE (unmodified), ACCEPTED (accept-risk), or 
 .PARAMETER PluginType
 Restrict to a plugin type: remote, local, combined, summary, reputation, or third_party.
 .PARAMETER Since
-Only findings seen since this date/time (the 'since' convenience filter; bounds by last-seen).
+Only findings seen since this date/time. Accepts both absolute datetime and relative strings:
+  - Absolute: (Get-Date), "2026-01-01", "2026-01-01 14:30:00"
+  - Relative: "7 days", "7d", "2 weeks", "2w", "1 year", "1y"
+  Bounds by last-seen. Examples: -Since "7 days" → last 7 days
 .PARAMETER FirstFound
 Only findings first detected on/after this date/time (net-new findings in a window).
 .PARAMETER LastFound
@@ -365,12 +582,16 @@ Only findings last seen on/after this date/time (precise last-seen cutoff).
 Only findings fixed on/after this date/time - remediation verification (pair with -State FIXED / -All).
 .PARAMETER IndexedSince
 Only findings indexed into Tenable on/after this date/time (data-freshness / pipeline use).
+.PARAMETER NumAssets
+Assets per request (default: 500).
+.PARAMETER Path
+Output path (JSONL file); omit to pipe objects to pipeline.
 .EXAMPLE
-Export-TIOVuln -Severity critical -VprMin 9 -Tag @{ BU = 'AMI' } -Path ./crown-jewels-crit.jsonl
+Export-TIOFindings -Severity critical -VprMin 9 -Tag @{ BU = 'AMI' } -Path ./crown-jewels-crit.jsonl
 .EXAMPLE
-Export-TIOVuln -State FIXED -LastFixed (Get-Date).AddDays(-30)        # what got remediated this month
+Export-TIOFindings -State FIXED -Since "30 days" -Path ./fixed-month.jsonl
 .EXAMPLE
-Export-TIOVuln -Source AGENT -Severity high,critical                  # agent-collected high/crit only
+Export-TIOFindings -Source AGENT -Severity high,critical -Since "7 days" -Path ./agent.jsonl
 #>
     [CmdletBinding(DefaultParameterSetName = 'Current')] param(
         [Parameter(ParameterSetName = 'All')]
@@ -389,7 +610,7 @@ Export-TIOVuln -Source AGENT -Severity high,critical                  # agent-co
         [string]$NetworkId,
         [string]$Cidr,
         [hashtable]$Tag,
-        [datetime]$Since,
+        [object]$Since,                    # datetime or string
         [datetime]$FirstFound,
         [datetime]$LastFound,
         [datetime]$LastFixed,
@@ -397,6 +618,10 @@ Export-TIOVuln -Source AGENT -Severity high,critical                  # agent-co
         [int]$NumAssets = 500,
         [string]$Path
     )
+    
+    # Parse -Since if it's a relative date string
+    if ($Since) { $Since = ConvertTo-TIORelativeDate $Since }
+    
     # @(...) forces an array: a bare if-expression unwraps a single-element result to a scalar,
     # which would serialize 'state' as "FIXED" instead of ["FIXED"] and the API rejects it (400).
     $states = @( if ($All) { 'OPEN', 'REOPENED', 'FIXED' }
@@ -538,8 +763,12 @@ List agent groups across all scanners.
     }
 }
 
-Export-ModuleMember -Function Connect-TIO, Set-TIOCredential, Get-TIOSession,
-    Get-TIOKeySource, Export-TIOVuln, Export-TIOAsset, Export-TIOCompliance,
+Export-ModuleMember -Function Connect-TIO, Set-TIOCredential, Set-TIOExportDefaults, ConvertTo-TIORelativeDate, Get-TIOSession,
+    Get-TIOKeySource, Export-TIOFindings, Export-TIOAsset, Export-TIOCompliance,
     Get-TIOScan, Get-TIOScanner, Get-TIOAgent, Get-TIOAgentGroup, Get-TIOTag,
     Get-TIOPolicy, Get-TIONetwork, Get-TIOExclusion, Get-TIOUser, Get-TIOGroup,
     Get-TIOServerStatus
+
+# Backward compatibility alias
+New-Alias -Name Export-TIOVuln -Value Export-TIOFindings -Force
+Export-ModuleMember -Alias Export-TIOVuln

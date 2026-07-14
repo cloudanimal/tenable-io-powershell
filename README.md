@@ -132,7 +132,7 @@ The OS secret store is chosen automatically — no key is ever placed on the com
 | Platform | Store |
 | --- | --- |
 | Any | `Microsoft.PowerShell.SecretManagement` vault, if one is registered (preferred) |
-| Windows | **DPAPI-encrypted file** (per-user, encrypted at rest) |
+| Windows | **Windows Credential Manager** entries named `Tenable API - access` / `Tenable API - secret` |
 | Linux / macOS | a **`0600` owner-only file** — the read is refused unless it's owner-only (**fail closed**) |
 
 `Get-TIOKeySource` prints which store this host will use (no secrets shown).
